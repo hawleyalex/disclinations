@@ -1,22 +1,25 @@
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 import numpy as np
-from PIL import Image
-from PIL import ImageTk
-from PIL import ImageEnhance
 import tkinter as tk
-from Island import Island
-import MFM_Arrows
+
+from matplotlib import cm
 from matplotlib.path import Path
+from PIL import Image, ImageTk, ImageEnhance
+
+from Island import Island
 
 
 class MFM_GUI:
     """
-    GUI for aligning islands to scans. Currently only produces tester islands to move/rotate.
+    GUI for aligning islands to scans.
     """
-    def __init__(self, fp, ilocs=None):
+    def __init__(self, fp1, fp2, ilocs=None):
         """
         Initialize GUI.
 
-        :param fp: string, filepath to image used to align islands
+        :param fp1: string, filepath to image used to align islands
+        :param fp2: string, filepath to image used to determine island orientations
         :param ilocs: string, filepath to text file with island locations
         """
         # Create tk window
@@ -24,30 +27,45 @@ class MFM_GUI:
         self.window.geometry('720x600')  # TODO: make this adjustable/make sense
 
         # Initialize variables
-        self.fp = fp
+        self.fp1 = fp1
+        self.fp2 = fp2
         self.ilocs = ilocs
 
         # Load an image
-        self.im = Image.open(fp).convert('L')
-        enhancer = ImageEnhance.Contrast(self.im)
-        self.im_contrast = enhancer.enhance(3)
-        im_x, im_y = self.im.size
-        self.img = ImageTk.PhotoImage(self.im)
+        self.im1 = Image.open(fp1).convert('L')
+        self.im2 = Image.open(fp2).convert('L')
 
-        # Create canvas widget and add image
+        enhancer = ImageEnhance.Contrast(self.im1)
+        self.im_contrast = enhancer.enhance(3)
+        im_x, im_y = self.im1.size
+
+        self.img1 = ImageTk.PhotoImage(self.im1)
+        self.img2 = ImageTk.PhotoImage(self.im2)
+
+        # Create canvas widget and add images
         self.canvas = tk.Canvas(self.window, width=im_x, height=im_y)
-        self.canvas.create_image(0, 0, anchor='nw', image=self.img)
-        self.canvas.grid(row=1, column=3, rowspan=5)
+        self.image2_canvas_object = self.canvas.create_image(0, 0, anchor='nw', image=self.img2)
+        self.image1_canvas_object = self.canvas.create_image(0, 0, anchor='nw', image=self.img1)
+        self.canvas.grid(row=1, column=3, rowspan=7)
 
         # Create buttons
-        self.rotate_button = tk.Button(self.window, text="Rotate", command=self.rotate_map)
-        self.rotate_button.grid(row=1, column=1)
-        self.scale_button = tk.Button(self.window, text="Scale", command=self.click_scale_button)
-        self.scale_button.grid(row=2, column=1)
+        self.color_legend = tk.Canvas(self.window, width=100, height=100)
+        self.color_legend.grid(row=1, column=1)
 
-        self.scale_text = tk.StringVar()
-        self.scale_entry = tk.Entry(self.window, textvariable=self.scale_text)
-        self.scale_entry.grid(row=3, column=1)
+        self.instructions_label = tk.Label(
+            self.window,
+            text="""
+            wasd: translate
+            r: rotate cw
+            e: rotate ccw
+            x: enter/exit select mode
+            c: select next
+            z: select prev
+            q: save island locs
+            """,
+            justify=tk.LEFT,
+        )
+        self.instructions_label.grid(row=2, column=1, rowspan=2)
 
         self.excise_button = tk.Button(self.window, text="Excise", command=self.draw_excised)
         self.excise_button.grid(row=4, column=1)
@@ -55,13 +73,23 @@ class MFM_GUI:
         self.sigmas_button = tk.Button(self.window, text="Arrows", command=self.draw_sigmas)
         self.sigmas_button.grid(row=5, column=1)
 
+        self.switch_image_frame = tk.Frame(self.window)
+        self.switch_image_frame.grid(row=6, column=1)
+
+        self.image_1_button = tk.Button(self.switch_image_frame, text="Im1", command=self.image_1_button_click)
+        self.image_1_button.grid(row=0, column=0, sticky='ne')
+        self.image_1_button = tk.Button(self.switch_image_frame, text="Im2", command=self.image_2_button_click)
+        self.image_1_button.grid(row=0, column=1, sticky='nw')
+
+        self.color_button = tk.Button(self.window, text="Color", command=self.draw_color_map)
+        self.color_button.grid(row=7, column=1)
+
         # Draw map of ideal island locations
         self.draw_map()
 
         # Set binds
         self.canvas.bind('<Button-1>', self.rec_cursor)
         self.canvas.bind('<B1-Motion>', self.translate_map_curs)
-        self.canvas.bind('<Double-Button-1>', self.rotate_map)  # TODO: Create a button/better functionality
         self.window.bind('<Key>', self.key_press)
 
         # Set state variable
@@ -113,31 +141,31 @@ class MFM_GUI:
         """
         scale_factor = 1/2  # TODO: magic number, make this a parameter
 
-        inner_boxes = [
+        self.inner_boxes = [
             Island(island.center, island.length * scale_factor, island.width, island.theta) for island in self.islands
         ]
         # TODO: all of these class variables should be defined in __init___
         self.excised_coords1 = [
             np.array([*inner.coords()[:4], *outer.coords()[2:4], *outer.coords()[:2]])
-            for inner, outer in zip(inner_boxes, self.islands)
+            for inner, outer in zip(self.inner_boxes, self.islands)
         ]
 
         self.excised_coords2 = [
             np.array([*inner.coords()[4:], *outer.coords()[6:], *outer.coords()[4:6]])
             for inner, outer in
-            zip(inner_boxes, self.islands)
+            zip(self.inner_boxes, self.islands)
         ]
 
         self.rec_excised1 = [
             self.canvas.create_polygon(
                 *coords,
-                outline='green', fill='')
+                outline='magenta', fill='')
             for coords in self.excised_coords1
         ]
         self.rec_excised2 = [
             self.canvas.create_polygon(
                 *coords,
-                outline='green', fill='')
+                outline='magenta', fill='')
             for coords in self.excised_coords2
         ]
         return
@@ -153,8 +181,8 @@ class MFM_GUI:
         self.arrows = [
             self.canvas.create_line(
                 *island.center,
-                island.center[0]+np.cos(island.theta + np.pi * (island.sigma-1)/-2)*island.length/5,
-                island.center[1]+np.sin(island.theta + np.pi * (island.sigma-1)/-2)*island.length/5,
+                island.center[0]+np.cos(island.theta + np.pi * (island.sigma-1)/-2)*island.length/4,
+                island.center[1]+np.sin(island.theta + np.pi * (island.sigma-1)/-2)*island.length/4,
                 arrow=tk.LAST, fill='red'
             )
             for island in self.islands
@@ -168,7 +196,7 @@ class MFM_GUI:
         :return: none
         """
         # IMPORTANT: PIL uses column-major, so this array has to be indexed as such.
-        im_arr = np.asarray(self.im_contrast)
+        im_arr = np.asarray(self.im2)
         for i, island in enumerate(self.islands):
             x1, y1 = self.get_inds(self.excised_coords1[i])
             x2, y2 = self.get_inds(self.excised_coords2[i])
@@ -236,6 +264,63 @@ class MFM_GUI:
         ys = inds[0] + min_y
 
         return xs, ys
+
+    def draw_color_map(self):
+        """
+        Color the islands according to the angle at which they're magnetized. Create legend.
+
+        :return: none
+        """
+        cmap = plt.get_cmap('hsv')
+        norm = mpl.colors.Normalize(vmin=0, vmax=2*np.pi)
+        scalar_map = cm.ScalarMappable(norm=norm, cmap=cmap)
+        self.color_islands = [
+            self.canvas.create_polygon(
+                *island.coords(),
+                fill=mpl.colors.rgb2hex(scalar_map.to_rgba(island.theta % (2 * np.pi)))
+            )
+            for island in self.islands
+        ]
+
+        self.little_black_arrows = [
+            self.canvas.create_line(
+                np.mean(self.inner_boxes[i].coords()[0:4:2]),
+                np.mean(self.inner_boxes[i].coords()[1:4:2]),
+                np.mean(self.inner_boxes[i].coords()[4:8:2]),
+                np.mean(self.inner_boxes[i].coords()[5:8:2]),
+                arrow=(lambda x: tk.FIRST if x == 1 else tk.LAST)(island.sigma),
+                arrowshape=(4, 5, 2)
+            )
+            for i, island in enumerate(self.islands)
+        ]
+
+        for theta in np.linspace(0, 2*np.pi, 200):
+            self.color_legend.create_line(
+                50, 50, 50+40*np.cos(theta), 50+40*np.sin(theta),
+                fill=mpl.colors.rgb2hex(scalar_map.to_rgba(theta)),
+                width=3,
+            )
+        self.color_legend.create_oval(10, 10, 91, 91, fill='', outline='black', width=2)
+        self.color_legend.create_oval(45, 45, 55, 55, fill='black')
+        return
+
+    def image_1_button_click(self):
+        """
+        Make image 1 visible.
+
+        :return: none
+        """
+        self.canvas.tag_lower(self.image2_canvas_object)
+        return
+
+    def image_2_button_click(self):
+        """
+        Make image 2 visible
+
+        :return: none
+        """
+        self.canvas.tag_lower(self.image1_canvas_object)
+        return
 
     def rec_cursor(self, event):
         """
@@ -431,10 +516,6 @@ class MFM_GUI:
             f.write(write_string)
         return
 
-    def test_calc(self):
-        MFM_Arrows.find_directions(self.islands, 0, self.fp)
-        return
-
     def key_press(self, event):
         """
         Makes GUI responsive to keyboard.
@@ -500,14 +581,11 @@ class MFM_GUI:
         elif char == "q":
             self.save_ilocs()
 
-        elif char == "h":
-            self.test_calc()
-
         return
 
 # Testing!
-# image_filepath = r'C:\Users\sophi\Documents\School\SchifferLab\disclinations\Bingham\Disclination\MFMscanning.0_00334_1.spm.png'
-# image_filepath = r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\Bingham\Disclination\MFMscanning.0_00334_5.spm.png"
-# ilocs = r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\ilocs0_00334_1.txt"
-# MFM_GUI(image_filepath, ilocs)
+align = r'C:\Users\sophi\Documents\School\SchifferLab\disclinations\Bingham\Disclination\MFMscanning.0_00334_1.spm.png'
+orient = r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\Bingham\Disclination\MFMscanning.0_00334_5.spm.png"
+ilocs = r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\ilocs0_00334_1.txt"
+MFM_GUI(align, orient, ilocs=ilocs)
 
