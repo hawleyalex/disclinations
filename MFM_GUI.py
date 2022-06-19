@@ -584,8 +584,9 @@ class MFM_GUI:
         return
 
 # Testing!
-align = r'C:\Users\sophi\Documents\School\SchifferLab\disclinations\Bingham\Disclination\MFMscanning.0_00334_1.spm.png'
-orient = r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\Bingham\Disclination\MFMscanning.0_00334_5.spm.png"
-ilocs = r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\ilocs0_00334_1.txt"
-MFM_GUI(align, orient, ilocs=ilocs)
+# align = r'C:\Users\sophi\Documents\School\SchifferLab\disclinations\Bingham\Disclination\MFMscanning.0_00334_1.spm.png'
+# orient = r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\Bingham\Disclination\MFMscanning.0_00334_5.spm.png"
+# ideal_island_locs = r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\size2even.txt"
+# saved_locs = r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\ilocs0_00334_1.txt"
+# MFM_GUI(align, orient, ilocs=saved_locs)
 
