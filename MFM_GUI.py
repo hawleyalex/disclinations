@@ -8,6 +8,7 @@ from matplotlib.path import Path
 from PIL import Image, ImageTk, ImageEnhance
 
 from Island import Island
+import MFM_Morph
 
 
 class MFM_GUI:
@@ -67,39 +68,108 @@ class MFM_GUI:
         )
         self.instructions_label.grid(row=2, column=1, rowspan=2)
 
-        self.excise_button = tk.Button(self.window, text="Excise", command=self.draw_excised)
-        self.excise_button.grid(row=4, column=1)
+        self.buttons_frame = tk.Frame(self.window)
+        self.buttons_frame.grid(row=4, column=1, rowspan=3, sticky='s')
 
-        self.sigmas_button = tk.Button(self.window, text="Arrows", command=self.draw_sigmas)
-        self.sigmas_button.grid(row=5, column=1)
+        self.delete_center_button = tk.Button(self.buttons_frame, text="Delete Center", command=self.delete_center)
+        self.delete_center_button.grid(row=0, column=0)
 
-        self.switch_image_frame = tk.Frame(self.window)
-        self.switch_image_frame.grid(row=6, column=1)
+        self.centers_ok_button = tk.Button(self.buttons_frame, text="Centers Ok", command=self.create_aligned_islands)
+        self.centers_ok_button.grid(row=1, column=0)
+
+        self.excise_button = tk.Button(self.buttons_frame, text="Excise", command=self.draw_excised)
+        self.excise_button.grid(row=2, column=0)
+
+        self.sigmas_button = tk.Button(self.buttons_frame, text="Arrows", command=self.draw_sigmas)
+        self.sigmas_button.grid(row=3, column=0)
+
+        self.switch_image_frame = tk.Frame(self.buttons_frame)
+        self.switch_image_frame.grid(row=4, column=0)
 
         self.image_1_button = tk.Button(self.switch_image_frame, text="Im1", command=self.image_1_button_click)
         self.image_1_button.grid(row=0, column=0, sticky='ne')
         self.image_1_button = tk.Button(self.switch_image_frame, text="Im2", command=self.image_2_button_click)
         self.image_1_button.grid(row=0, column=1, sticky='nw')
 
-        self.color_button = tk.Button(self.window, text="Color", command=self.draw_color_map)
-        self.color_button.grid(row=7, column=1)
-
-        # Draw map of ideal island locations
-        self.draw_map()
-
-        # Set binds
-        self.canvas.bind('<Button-1>', self.rec_cursor)
-        self.canvas.bind('<B1-Motion>', self.translate_map_curs)
-        self.window.bind('<Key>', self.key_press)
+        self.color_button = tk.Button(self.buttons_frame, text="Color", command=self.draw_color_map)
+        self.color_button.grid(row=5, column=0)
 
         # Set state variable
+        self.set_centers_mode = True
         self.select_mode = False
         self.current_select = None
         self.current_ind = None
+        self.selected_center_ind = None
+
+        # Draw map of ideal island locations
+        self.draw_centers()
+
+        # Set binds
+        self.canvas.bind('<Button-1>', self.select_center)
+        # self.canvas.bind('<Button-1>', self.rec_cursor)  # TODO: combine these two binds into one function
+        self.canvas.bind('<B1-Motion>', self.translate_map_curs)
+        self.window.bind('<Key>', self.key_press)
 
         # Run GUI
         self.window.mainloop()
 
+        return
+
+    def draw_centers(self):
+        """
+        Find and draw all detected shape centers.
+
+        :return: none
+        """
+        if self.set_centers_mode:  # TODO: replace with button state
+            kernel = np.ones((5, 5), np.uint8)  # If the detection is bad, edit the kernel
+            centers = MFM_Morph.get_centers(self.fp1, kernel)
+            r = 3
+
+            self.center_shapes = [  # TODO: These should really be combined in a class
+                self.canvas.create_oval(center[0] - r, center[1] - r, center[0] + r, center[1] + r,
+                                        outline='black', fill='red')
+                for center in centers
+            ]
+
+            self.center_paths = [
+                Path.circle(center=center, radius=r+1) for center in centers
+            ]
+
+            self.center_coords = centers
+        return
+
+    def delete_center(self):
+        """
+        Delete currently selected center.
+
+        :return: none
+        """
+        if self.selected_center_ind is not None:  # TODO: add state variable instead
+            self.canvas.delete(self.center_shapes[self.selected_center_ind])
+            self.center_shapes.pop(self.selected_center_ind)
+            self.center_paths.pop(self.selected_center_ind)
+            self.center_coords = np.delete(self.center_coords, self.selected_center_ind, axis=0)
+        return
+
+    def create_aligned_islands(self):
+        """
+        Align the centers of the islands.
+
+        :return: none
+        """
+        ideal_inds = np.genfromtxt(r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\size2even.txt",
+                                   delimiter='\t')  # TODO: this doesn't belong here
+
+        island_coords, theta_shift = MFM_Morph.align_centers(self.center_coords, ideal_inds[:, :2])
+
+        self.islands = [
+            Island(np.array([row[0][0], row[0][1]]), 20, 10, row[1][2] + theta_shift)
+            for row in zip(island_coords, ideal_inds)  # TODO: length and width should be adjustable & not here
+        ]
+
+        self.center = np.mean(island_coords, axis=0)  # TODO: this is an odd place to define it
+        self.draw_map()
         return
 
     def draw_map(self):
@@ -108,28 +178,10 @@ class MFM_GUI:
 
         :return: none
         """
-        # Load map from file
-
-        # Calculate rectangle vertices
-        length = 20  # TODO: These variables don't belong here
-        width = 10
-
-        if self.ilocs:
-            island_data = np.genfromtxt(self.ilocs,
-                                        delimiter='\t')
-        else:
-            island_data = np.genfromtxt(r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\size2even.txt",
-                                        delimiter='\t')
-
-        self.islands = [  # TODO: initialize in __init__
-            Island(np.array([row[0], row[1]]), length, width, row[2]) for row in island_data
-        ]
-
-        # Set center
-        self.center = np.array([np.mean(island_data[:,0]), np.mean(island_data[:,1])])
 
         # Draw map
-        self.rec_objects = [self.canvas.create_polygon(*island.coords(), outline='red', fill='') for island in self.islands]
+        self.rec_objects = [self.canvas.create_polygon(*island.coords(), outline='red', fill='')
+                            for island in self.islands]
         return
 
     def draw_excised(self):
@@ -192,18 +244,24 @@ class MFM_GUI:
     def calculate_sigmas(self):
         """
         Using the current island positions, calculate the sigma of each island.
+        Excise islands using self.get_inds, decide sigma based on average of
+        excised pixels.
 
         :return: none
         """
+        # Read image as numpy array
         # IMPORTANT: PIL uses column-major, so this array has to be indexed as such.
         im_arr = np.asarray(self.im2)
         for i, island in enumerate(self.islands):
+            # Get the coordinates of each excised pixel
             x1, y1 = self.get_inds(self.excised_coords1[i])
             x2, y2 = self.get_inds(self.excised_coords2[i])
 
+            # Take the mean of the grayscale values of all the excised pixels
             av1 = np.mean(im_arr[y1, x1])  # indexing using column-major
             av2 = np.mean(im_arr[y2, x2])
 
+            # Assign sigma based on which island is bigger
             if av1 > av2:
                 island.sigma = 1
                 # self.canvas.create_polygon(*self.excised_coords1[i], outline='green', fill='')
@@ -211,7 +269,7 @@ class MFM_GUI:
                 island.sigma = -1
                 # self.canvas.create_polygon(*self.excised_coords2[i], outline='green', fill='')
             else:
-                island.sigma = 0
+                island.sigma = 0  # TODO: Add handling for edge case
         return
 
     def get_inds(self, rec):
@@ -243,7 +301,7 @@ class MFM_GUI:
         # this is because of the way different numpy functions behave; check the docs if
         # you think something is wrong.
 
-        # Create a grid for a rectangle that circumscribes the given rectangle
+        # Create a grid of every point in the rectangle that circumscribes the given rectangle
         x, y = np.meshgrid(np.arange(max_x - min_x + 1), np.arange(max_y - min_y + 1))
         x, y = x.flatten(), y.flatten()
         points = np.vstack((x, y)).T
@@ -277,7 +335,9 @@ class MFM_GUI:
         self.color_islands = [
             self.canvas.create_polygon(
                 *island.coords(),
-                fill=mpl.colors.rgb2hex(scalar_map.to_rgba(island.theta % (2 * np.pi)))
+                fill=mpl.colors.rgb2hex(scalar_map.to_rgba(
+                    (island.theta + (lambda x: 0 if x == 1 else np.pi)(island.sigma)) % (2 * np.pi)
+                ))
             )
             for island in self.islands
         ]
@@ -320,6 +380,30 @@ class MFM_GUI:
         :return: none
         """
         self.canvas.tag_lower(self.image1_canvas_object)
+        return
+
+    def select_center(self, event):
+        """
+        If cursor is within a circle, select it.
+
+        :param event: part of tkinter, automatically implemented through the bind mechanic
+        :return: none
+        """
+        r = 3  # TODO: SPOT
+        for i, center_path in enumerate(self.center_paths):
+            if center_path.contains_point((event.x, event.y)):
+                if self.selected_center_ind is not None:
+                    self.canvas.delete(self.center_shapes[self.selected_center_ind])
+                    coords = self.center_coords[self.selected_center_ind]
+                    self.center_shapes[self.selected_center_ind] = self.canvas.create_oval(
+                        coords[0] - r, coords[1] - r, coords[0] + r, coords[1] + r,
+                        outline='black', fill='red'
+                    )
+                self.selected_center_ind = i
+                self.canvas.delete(self.center_shapes[i])
+                coords = self.center_coords[i]
+                self.center_shapes[i] = self.canvas.create_oval(coords[0]-r, coords[1]-r, coords[0]+r, coords[1]+r,
+                                                                outline='black', fill='yellow')
         return
 
     def rec_cursor(self, event):

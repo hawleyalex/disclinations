@@ -16,10 +16,11 @@ class Island:
         :param theta: float, angle between x-axis and island length in radians
         :param sigma int, 1 indicates pointing toward right when theta=0, -1 indicates left when theta=0
         """
+
         self.center = center
         self.length = length
         self.width = width
-        self.theta = theta  # theta = 0 means island is horizontal
+        self.theta = theta
         self.sigma = sigma
         return
 
@@ -53,6 +54,7 @@ class Island:
 
         # Change theta
         self.theta = self.theta + rad
+
         return
 
     def scale(self, factor, origin):
