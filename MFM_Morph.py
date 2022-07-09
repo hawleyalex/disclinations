@@ -3,13 +3,14 @@ import numpy as np
 from scipy.optimize import linear_sum_assignment
 
 
-def get_centers(img_fp, kernel):
+def get_centers(img_fp, kernel, thresh=None):
     """
     Return the centers of each shape in the foreground of the image.
     The centers currently aren't accurate, but they're guaranteed to be within the shape.
 
     :param img_fp: string, the filepath to an image with lighter shapes in the foreground
     :param kernel: numpy array, a shape that will be used for image morphology. Change this if shape detection is bad.
+    :param thresh: int, number from 0-255 that changes the detection threshold for the image
     :return: centers, numpy array size (# of shapes, 2)
     """
     # Read the image into cv2 in grayscale
@@ -17,7 +18,11 @@ def get_centers(img_fp, kernel):
 
     # Make every pixel black or white depending on threshold (calculated by cv2.THRESH_OTSU)
     # Basically increase contrast to maximum possible
-    ret, img_thresh = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+    if thresh is None:
+        ret, img_thresh = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    else:
+        ret, img_thresh = cv2.threshold(img, thresh, 255, cv2.THRESH_BINARY)
 
     # Remove any white shape that is smaller than kernel
     opening = cv2.morphologyEx(img_thresh, cv2.MORPH_OPEN, kernel)

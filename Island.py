@@ -92,3 +92,14 @@ class Island:
         ])
 
         return arr
+
+
+class Vertex:
+    def __init__(self, ids, is_center=False, inout=None):
+        self.ids = ids
+        self.is_center = is_center
+        if inout:
+            self.inout = inout
+        else:
+            self.inout = ["", "", "", ""]
+

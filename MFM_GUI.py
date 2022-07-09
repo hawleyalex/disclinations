@@ -15,12 +15,14 @@ class MFM_GUI:
     """
     GUI for aligning islands to scans.
     """
-    def __init__(self, fp1, fp2, ilocs=None):
+    def __init__(self, fp1, fp2, n, ndisc='single', ilocs=None, save_file=None):
         """
         Initialize GUI.
 
         :param fp1: string, filepath to image used to align islands
         :param fp2: string, filepath to image used to determine island orientations
+        :param n: int, number of islands on "side" of square
+        :param ndisc: string, number of disclinations. 'single' or 'double'
         :param ilocs: string, filepath to text file with island locations
         """
         # Create tk window
@@ -30,7 +32,26 @@ class MFM_GUI:
         # Initialize variables
         self.fp1 = fp1
         self.fp2 = fp2
+        self.n_side = n
+        self.ndisc = ndisc
         self.ilocs = ilocs
+        self.save_file = save_file
+
+        n_islands_dict = {
+            '05': 18,
+            '06': 30,
+            '09': 84,
+            '10': 108,
+            '13': 198,
+            '14': 234,
+            '19': 459,
+            '20': 513
+        }
+
+        self.n_islands = n_islands_dict['{:0>2d}'.format(self.n_side)]
+
+        # Find position file
+        self.ideal_fp = r"./islandcoordinates/{}{:0>2d}.txt".format(self.ndisc, self.n_side)
 
         # Load an image
         self.im1 = Image.open(fp1).convert('L')
@@ -47,67 +68,36 @@ class MFM_GUI:
         self.canvas = tk.Canvas(self.window, width=im_x, height=im_y)
         self.image2_canvas_object = self.canvas.create_image(0, 0, anchor='nw', image=self.img2)
         self.image1_canvas_object = self.canvas.create_image(0, 0, anchor='nw', image=self.img1)
-        self.canvas.grid(row=1, column=3, rowspan=7)
+        self.canvas.grid(row=2, column=2, rowspan=7)
 
-        # Create buttons
-        self.color_legend = tk.Canvas(self.window, width=100, height=100)
-        self.color_legend.grid(row=1, column=1)
-
-        self.instructions_label = tk.Label(
-            self.window,
-            text="""
-            wasd: translate
-            r: rotate cw
-            e: rotate ccw
-            x: enter/exit select mode
-            c: select next
-            z: select prev
-            q: save island locs
-            """,
-            justify=tk.LEFT,
-        )
-        self.instructions_label.grid(row=2, column=1, rowspan=2)
-
-        self.buttons_frame = tk.Frame(self.window)
-        self.buttons_frame.grid(row=4, column=1, rowspan=3, sticky='s')
-
-        self.delete_center_button = tk.Button(self.buttons_frame, text="Delete Center", command=self.delete_center)
-        self.delete_center_button.grid(row=0, column=0)
-
-        self.centers_ok_button = tk.Button(self.buttons_frame, text="Centers Ok", command=self.create_aligned_islands)
-        self.centers_ok_button.grid(row=1, column=0)
-
-        self.excise_button = tk.Button(self.buttons_frame, text="Excise", command=self.draw_excised)
-        self.excise_button.grid(row=2, column=0)
-
-        self.sigmas_button = tk.Button(self.buttons_frame, text="Arrows", command=self.draw_sigmas)
-        self.sigmas_button.grid(row=3, column=0)
-
-        self.switch_image_frame = tk.Frame(self.buttons_frame)
-        self.switch_image_frame.grid(row=4, column=0)
+        self.switch_image_frame = tk.Frame(self.window)
+        self.switch_image_frame.grid(row=1, column=2)
 
         self.image_1_button = tk.Button(self.switch_image_frame, text="Im1", command=self.image_1_button_click)
         self.image_1_button.grid(row=0, column=0, sticky='ne')
-        self.image_1_button = tk.Button(self.switch_image_frame, text="Im2", command=self.image_2_button_click)
-        self.image_1_button.grid(row=0, column=1, sticky='nw')
+        self.image_2_button = tk.Button(self.switch_image_frame, text="Im2", command=self.image_2_button_click)
+        self.image_2_button.grid(row=0, column=1, sticky='nw')
 
-        self.color_button = tk.Button(self.buttons_frame, text="Color", command=self.draw_color_map)
-        self.color_button.grid(row=5, column=0)
+        self.build_centers_widgets()
 
         # Set state variable
         self.set_centers_mode = True
+        self.set_islands_mode = False
+        self.set_sigmas_mode = False
         self.select_mode = False
         self.current_select = None
         self.current_ind = None
         self.selected_center_ind = None
+        self.selected_island_ind = None
+        self.center_shapes = None
 
         # Draw map of ideal island locations
         self.draw_centers()
 
         # Set binds
         self.canvas.bind('<Button-1>', self.select_center)
-        # self.canvas.bind('<Button-1>', self.rec_cursor)  # TODO: combine these two binds into one function
         self.canvas.bind('<B1-Motion>', self.translate_map_curs)
+        self.canvas.bind('<Button-3>', self.add_center)
         self.window.bind('<Key>', self.key_press)
 
         # Run GUI
@@ -115,16 +105,195 @@ class MFM_GUI:
 
         return
 
-    def draw_centers(self):
-        """
-        Find and draw all detected shape centers.
+    def build_centers_widgets(self):
+        self.current_centers_var = tk.StringVar()
+        self.thresh_entry_var = tk.StringVar()
 
-        :return: none
-        """
+        self.current_centers_label = tk.Label(self.window, textvariable=self.current_centers_var)
+        self.current_centers_label.grid(row=2, column=1)
+
+        self.centers_needed_label = tk.Label(self.window, text="Centers needed: {}".format(self.n_islands))
+        self.centers_needed_label.grid(row=3, column=1)
+
+        self.thresh_frame = tk.Frame(self.window)
+        self.thresh_frame.grid(row=4, column=1, rowspan=2)
+
+        self.set_thresh_label = tk.Label(self.thresh_frame, text="Set thresh: ")
+        self.set_thresh_label.grid(row=1, column=1)
+
+        self.set_thresh_entry = tk.Entry(self.thresh_frame, textvariable=self.thresh_entry_var)
+        self.set_thresh_entry.grid(row=1, column=2)
+
+        self.reset_thresh_button = tk.Button(self.thresh_frame, text="Reset thresh", command=self.draw_centers)
+        self.reset_thresh_button.grid(row=2, column=1, columnspan=2)
+
+        self.set_centers_instructions = tk.Label(
+            self.window,
+            text="""
+            Click to select point
+            Drag to move
+            Right click to add point
+            Press L to delete
+            """
+        )
+        self.set_centers_instructions.grid(row=6, column=1)
+
+        self.centers_ok_button = tk.Button(self.window, text="Centers Ok", command=self.centers_ok)
+        self.centers_ok_button.grid(row=7, column=1)
+
+        self.centers_widgets = [
+            self.current_centers_label,
+            self.centers_needed_label,
+            self.thresh_frame,
+            self.set_thresh_label,
+            self.set_thresh_entry,
+            self.reset_thresh_button,
+            self.set_centers_instructions,
+            self.centers_ok_button
+        ]
+
+        self.set_thresh_entry.bind('<Return>', self.set_new_thresh)
+
+        return
+
+    def build_islands_widgets(self):
+        self.island_length_var = tk.StringVar()
+        self.island_width_var = tk.StringVar()
+
+        self.edit_centers_button = tk.Button(self.window, text="Edit Centers")
+        self.edit_centers_button.grid(row=1, column=1)
+
+        self.islands_instructions_label = tk.Label(
+            self.window,
+            text="""
+            x: select island
+            z/c: change select
+            wasd: translate island
+            e/r: rotate island
+            """
+        )
+        self.islands_instructions_label.grid(row=2, column=1, rowspan=2)
+
+        self.island_size_frame = tk.Frame(self.window)
+        self.island_size_frame.grid(row=4, column=1, rowspan=2)
+
+        self.island_length_label = tk.Label(self.island_size_frame, text="Island length: ")
+        self.island_length_label.grid(row=1, column=1)
+
+        self.island_length_entry = tk.Entry(self.island_size_frame, textvariable=self.island_length_var)
+        self.island_length_entry.grid(row=1, column=2)
+
+        self.island_width_label= tk.Label(self.island_size_frame, text="Island width: ")
+        self.island_width_label.grid(row=2, column=1)
+
+        self.island_width_entry = tk.Entry(self.island_size_frame, textvariable=self.island_width_var)
+        self.island_width_entry.grid(row=2, column=2)
+
+        self.islands_ok_button = tk.Button(self.window, text="Islands Ok", command=self.islands_ok)
+        self.islands_ok_button.grid(row=7, column=1)
+
+        self.islands_widgets = [
+            self.edit_centers_button,
+            self.islands_instructions_label,
+            self.island_size_frame,
+            self.island_length_label,
+            self.island_length_entry,
+            self.island_width_label,
+            self.island_width_entry,
+            self.islands_ok_button
+        ]
+
+        self.island_length_entry.bind('<Return>', self.change_island_length)
+        self.island_width_entry.bind('<Return>', self.change_island_width)
+
+        return
+
+    def build_sigmas_widgets(self):
+        self.color_map_var = tk.IntVar()
+        self.outlines_var = tk.IntVar()
+
+        self.edit_islands_button = tk.Button(self.window, text="Edit Islands")
+        self.edit_islands_button.grid(row=1, column=1)
+
+        self.color_map_box = tk.Checkbutton(self.window, text="Color map:",
+                                            variable=self.color_map_var, command=self.color_checkbox)
+        self.color_map_box.grid(row=2, column=1)
+        self.color_map_box.select()
+
+        self.outlines_box = tk.Checkbutton(self.window, text="Outlines:",
+                                           variable=self.outlines_var, command=self.outlines_checkbox)
+        self.outlines_box.grid(row=3, column=1)
+        self.outlines_box.select()
+
+        self.sigmas_instructions_label = tk.Label(
+            self.window,
+            text="""
+            Click to select
+            """
+        )
+        self.sigmas_instructions_label.grid(row=4, column=1)
+
+        self.flip_button = tk.Button(self.window, text="Flip selected")
+        self.flip_button.grid(row=5, column=1)
+
+        self.save_results_button = tk.Button(self.window, text="Save results", command=self.save_data_to_file)
+        self.save_results_button.grid(row=7, column=1)
+
+        return
+
+    def centers_ok(self):
+        self.set_centers_mode = False
+        self.set_islands_mode = True
+
+        for widget in self.centers_widgets:
+            widget.grid_forget()
+
+        self.hide_centers()
+        self.build_islands_widgets()
+        self.create_aligned_islands()
+        return
+
+    def islands_ok(self):
+        self.set_islands_mode = False
+        self.set_sigmas_mode = True
+
+        for widget in self.islands_widgets:
+            widget.grid_forget()
+
+        self.build_sigmas_widgets()
+        self.draw_excised()
+        self.draw_sigmas()
+        self.draw_color_map()
+        return
+
+    def change_island_length(self, event=None):
+        length = int(self.island_length_var.get())
+
+        for island in self.islands:
+            island.length = length
+
+        self.delete_map()
+        self.draw_map()
+        return
+
+    def change_island_width(self, event=None):
+        width = int(self.island_width_var.get())
+
+        for island in self.islands:
+            island.width = width
+
+        self.delete_map()
+        self.draw_map()
+        return
+
+    def set_new_thresh(self, event=None):
         if self.set_centers_mode:  # TODO: replace with button state
             kernel = np.ones((5, 5), np.uint8)  # If the detection is bad, edit the kernel
-            centers = MFM_Morph.get_centers(self.fp1, kernel)
+            centers = MFM_Morph.get_centers(self.fp1, kernel, thresh=int(self.thresh_entry_var.get()))
             r = 3
+
+            for shape in self.center_shapes:
+                self.canvas.delete(shape)
 
             self.center_shapes = [  # TODO: These should really be combined in a class
                 self.canvas.create_oval(center[0] - r, center[1] - r, center[0] + r, center[1] + r,
@@ -137,6 +306,40 @@ class MFM_GUI:
             ]
 
             self.center_coords = centers
+
+            self.current_centers_var.set("Current centers: {}".format(len(centers)))
+
+        return
+
+    def draw_centers(self, event=None):  # TODO: Combine this function with one above
+        """
+        Find and draw all detected shape centers.
+
+        :return: none
+        """
+
+        if self.set_centers_mode:  # TODO: replace with button state
+            kernel = np.ones((5, 5), np.uint8)  # If the detection is bad, edit the kernel
+            centers = MFM_Morph.get_centers(self.fp1, kernel)
+            r = 3
+
+            if self.center_shapes:
+                for shape in self.center_shapes:
+                    self.canvas.delete(shape)
+
+            self.center_shapes = [  # TODO: These should really be combined in a class
+                self.canvas.create_oval(center[0] - r, center[1] - r, center[0] + r, center[1] + r,
+                                        outline='black', fill='red')
+                for center in centers
+            ]
+
+            self.center_paths = [
+                Path.circle(center=center, radius=r+1) for center in centers
+            ]
+
+            self.center_coords = centers
+
+            self.current_centers_var.set("Current centers: {}".format(len(centers)))
         return
 
     def delete_center(self):
@@ -150,6 +353,9 @@ class MFM_GUI:
             self.center_shapes.pop(self.selected_center_ind)
             self.center_paths.pop(self.selected_center_ind)
             self.center_coords = np.delete(self.center_coords, self.selected_center_ind, axis=0)
+            self.selected_center_ind = None
+
+            self.current_centers_var.set("Current centers: {}".format(len(self.center_coords)))
         return
 
     def create_aligned_islands(self):
@@ -158,8 +364,7 @@ class MFM_GUI:
 
         :return: none
         """
-        ideal_inds = np.genfromtxt(r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\size2even.txt",
-                                   delimiter='\t')  # TODO: this doesn't belong here
+        ideal_inds = np.genfromtxt(self.ideal_fp, delimiter=',')  # TODO: this doesn't belong here
 
         island_coords, theta_shift = MFM_Morph.align_centers(self.center_coords, ideal_inds[:, :2])
 
@@ -169,7 +374,9 @@ class MFM_GUI:
         ]
 
         self.center = np.mean(island_coords, axis=0)  # TODO: this is an odd place to define it
+        self.set_centers_mode = False
         self.draw_map()
+        #self.draw_web()
         return
 
     def draw_map(self):
@@ -179,10 +386,30 @@ class MFM_GUI:
         :return: none
         """
 
-        # Draw map
         self.rec_objects = [self.canvas.create_polygon(*island.coords(), outline='red', fill='')
                             for island in self.islands]
+
         return
+
+    def delete_map(self):
+        for rec in self.rec_objects:
+            self.canvas.delete(rec)
+        return
+
+    def draw_web(self):
+        vertices = np.genfromtxt(r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\adjMatrices\single05.txt",
+                                 delimiter=',')
+        for vertex in vertices[:-1]:
+            self.canvas.create_line(
+                *self.islands[int(vertex[0])].center,
+                *self.islands[int(vertex[1])].center,
+                fill='yellow'
+            )
+            self.canvas.create_line(
+                *self.islands[int(vertex[2])].center,
+                *self.islands[int(vertex[3])].center,
+                fill='yellow'
+            )
 
     def draw_excised(self):
         """
@@ -208,18 +435,18 @@ class MFM_GUI:
             zip(self.inner_boxes, self.islands)
         ]
 
-        self.rec_excised1 = [
-            self.canvas.create_polygon(
-                *coords,
-                outline='magenta', fill='')
-            for coords in self.excised_coords1
-        ]
-        self.rec_excised2 = [
-            self.canvas.create_polygon(
-                *coords,
-                outline='magenta', fill='')
-            for coords in self.excised_coords2
-        ]
+        # self.rec_excised1 = [
+        #     self.canvas.create_polygon(
+        #         *coords,
+        #         outline='magenta', fill='')
+        #     for coords in self.excised_coords1
+        # ]
+        # self.rec_excised2 = [
+        #     self.canvas.create_polygon(
+        #         *coords,
+        #         outline='magenta', fill='')
+        #     for coords in self.excised_coords2
+        # ]
         return
 
     def draw_sigmas(self):
@@ -230,15 +457,15 @@ class MFM_GUI:
         """
         self.calculate_sigmas()
 
-        self.arrows = [
-            self.canvas.create_line(
-                *island.center,
-                island.center[0]+np.cos(island.theta + np.pi * (island.sigma-1)/-2)*island.length/4,
-                island.center[1]+np.sin(island.theta + np.pi * (island.sigma-1)/-2)*island.length/4,
-                arrow=tk.LAST, fill='red'
-            )
-            for island in self.islands
-        ]
+        # self.arrows = [
+        #     self.canvas.create_line(
+        #         *island.center,
+        #         island.center[0]+np.cos(island.theta + np.pi * (island.sigma-1)/-2)*island.length/4,
+        #         island.center[1]+np.sin(island.theta + np.pi * (island.sigma-1)/-2)*island.length/4,
+        #         arrow=tk.LAST, fill='red'
+        #     )
+        #     for island in self.islands
+        # ]
         return
 
     def calculate_sigmas(self):
@@ -323,6 +550,54 @@ class MFM_GUI:
 
         return xs, ys
 
+    def color_checkbox(self):
+        if self.color_map_var.get():
+            self.show_color_map()
+        else:
+            self.hide_color_map()
+        return
+
+    def outlines_checkbox(self):
+        if self.outlines_var.get():
+            self.show_recs()
+        else:
+            self.hide_recs()
+        return
+
+    def show_color_map(self):
+        for item in self.color_islands:
+            self.canvas.itemconfigure(item, state='normal')
+        for item in self.little_black_arrows:
+            self.canvas.itemconfigure(item, state='normal')
+        return
+
+    def hide_color_map(self):
+        for item in self.color_islands:
+            self.canvas.itemconfigure(item, state='hidden')
+        for item in self.little_black_arrows:
+            self.canvas.itemconfigure(item, state='hidden')
+        return
+
+    def show_recs(self):
+        for item in self.rec_objects:
+            self.canvas.itemconfigure(item, state='normal')
+        return
+
+    def hide_recs(self):
+        for item in self.rec_objects:
+            self.canvas.itemconfigure(item, state='hidden')
+        return
+
+    def show_centers(self):
+        for item in self.center_shapes:
+            self.canvas.itemconfigure(item, state='normal')
+        return
+
+    def hide_centers(self):
+        for item in self.center_shapes:
+            self.canvas.itemconfigure(item, state='hidden')
+        return
+
     def draw_color_map(self):
         """
         Color the islands according to the angle at which they're magnetized. Create legend.
@@ -354,14 +629,14 @@ class MFM_GUI:
             for i, island in enumerate(self.islands)
         ]
 
-        for theta in np.linspace(0, 2*np.pi, 200):
-            self.color_legend.create_line(
-                50, 50, 50+40*np.cos(theta), 50+40*np.sin(theta),
-                fill=mpl.colors.rgb2hex(scalar_map.to_rgba(theta)),
-                width=3,
-            )
-        self.color_legend.create_oval(10, 10, 91, 91, fill='', outline='black', width=2)
-        self.color_legend.create_oval(45, 45, 55, 55, fill='black')
+        # for theta in np.linspace(0, 2*np.pi, 200):
+        #     self.color_legend.create_line(
+        #         50, 50, 50+40*np.cos(theta), 50+40*np.sin(theta),
+        #         fill=mpl.colors.rgb2hex(scalar_map.to_rgba(theta)),
+        #         width=3,
+        #     )
+        # self.color_legend.create_oval(10, 10, 91, 91, fill='', outline='black', width=2)
+        # self.color_legend.create_oval(45, 45, 55, 55, fill='black')
         return
 
     def image_1_button_click(self):
@@ -382,6 +657,24 @@ class MFM_GUI:
         self.canvas.tag_lower(self.image1_canvas_object)
         return
 
+    def add_center(self, event):
+        r = 3  # TODO: silksong release date is pushed back every time you do this
+        if self.set_centers_mode:
+            new_center = np.array([event.x, event.y])
+            self.center_shapes.append(
+                self.canvas.create_oval(
+                    new_center[0] - r, new_center[1] - r, new_center[0] + r, new_center[1] + r,
+                    outline='black', fill='red'
+                )
+            )
+            self.center_paths.append(
+                Path.circle(center=new_center, radius=r+1)
+            )
+            self.center_coords = np.vstack([self.center_coords, new_center])
+
+        self.current_centers_var.set("Current centers: {}".format(len(self.center_coords)))
+        return
+
     def select_center(self, event):
         """
         If cursor is within a circle, select it.
@@ -389,32 +682,45 @@ class MFM_GUI:
         :param event: part of tkinter, automatically implemented through the bind mechanic
         :return: none
         """
-        r = 3  # TODO: SPOT
-        for i, center_path in enumerate(self.center_paths):
-            if center_path.contains_point((event.x, event.y)):
-                if self.selected_center_ind is not None:
-                    self.canvas.delete(self.center_shapes[self.selected_center_ind])
-                    coords = self.center_coords[self.selected_center_ind]
-                    self.center_shapes[self.selected_center_ind] = self.canvas.create_oval(
-                        coords[0] - r, coords[1] - r, coords[0] + r, coords[1] + r,
-                        outline='black', fill='red'
-                    )
-                self.selected_center_ind = i
-                self.canvas.delete(self.center_shapes[i])
-                coords = self.center_coords[i]
-                self.center_shapes[i] = self.canvas.create_oval(coords[0]-r, coords[1]-r, coords[0]+r, coords[1]+r,
-                                                                outline='black', fill='yellow')
-        return
-
-    def rec_cursor(self, event):
-        """
-        Record the position of the cursor at time of the event. Stores position in self.store_x and self.store_y.
-
-        :param event: part of tkinter, automatically implemented through the bind mechanic
-        :return: none
-        """
         self.store_x = event.x  # TODO: These should be initialized somewhere else
         self.store_y = event.y
+
+        if self.set_centers_mode:
+            r = 3  # TODO: SPOT
+            for i, center_path in enumerate(self.center_paths):
+                if center_path.contains_point((event.x, event.y)):
+                    if self.selected_center_ind is not None:
+                        self.canvas.delete(self.center_shapes[self.selected_center_ind])
+                        coords = self.center_coords[self.selected_center_ind]
+                        self.center_shapes[self.selected_center_ind] = self.canvas.create_oval(
+                            coords[0] - r, coords[1] - r, coords[0] + r, coords[1] + r,
+                            outline='black', fill='red'
+                        )
+                    self.selected_center_ind = i
+                    self.canvas.delete(self.center_shapes[i])
+                    coords = self.center_coords[i]
+                    self.center_shapes[i] = self.canvas.create_oval(coords[0]-r, coords[1]-r, coords[0]+r, coords[1]+r,
+                                                                    outline='black', fill='yellow')
+        elif self.set_sigmas_mode:
+            for i, island in enumerate(self.islands):
+                if (Path(island.coords().reshape((4, 2)))).contains_point((event.x, event.y)):
+                    if self.selected_island_ind is not None:
+                        self.canvas.delete(self.rec_objects[self.selected_island_ind])
+                        if self.outlines_var.get():
+                            state_var = 'normal'
+                        else:
+                            state_var = 'hidden'
+                        self.rec_objects[self.selected_island_ind] = self.canvas.create_polygon(
+                            *island.coords(),
+                            outline='red', fill='', width=1, state=state_var
+                        )
+                    self.selected_island_ind = i
+                    self.canvas.delete(self.rec_objects[i])
+                    self.rec_objects[self.selected_island_ind] = self.canvas.create_polygon(
+                        *island.coords(),
+                        outline='yellow', fill='', width=3, state='normal'
+                    )
+
         return
 
     def translate_map_curs(self, event):
@@ -432,13 +738,25 @@ class MFM_GUI:
         self.store_x = event.x
         self.store_y = event.y
 
-        # Set new center
-        self.center = self.center + [delta_x, delta_y]
+        if self.set_centers_mode and self.selected_center_ind is not None:
+            r = 3  # TODO: SPOT I AM BEGGING
+            new_center = self.center_coords[self.selected_center_ind] + (delta_x, delta_y)
+            self.canvas.delete(self.center_shapes[self.selected_center_ind])
+            self.center_shapes[self.selected_center_ind] = self.canvas.create_oval(
+                new_center[0] - r, new_center[1] - 4, new_center[0] + r, new_center[1] + r,
+                outline='black', fill='yellow'
+            )
+            self.center_paths[self.selected_center_ind] = Path.circle(center=new_center, radius=r+1)
+            self.center_coords[self.selected_center_ind][0] = new_center[0]
+            self.center_coords[self.selected_center_ind][1] = new_center[1]
+        else:
+            # Set new center
+            self.center = self.center + [delta_x, delta_y]
 
-        for i, island in enumerate(self.islands):
-            self.canvas.delete(self.rec_objects[i])
-            island.translate(delta_x, delta_y)
-            self.rec_objects[i] = self.canvas.create_polygon(*island.coords(), outline='red', fill='')  # TODO: SPOT
+            for i, island in enumerate(self.islands):
+                self.canvas.delete(self.rec_objects[i])
+                island.translate(delta_x, delta_y)
+                self.rec_objects[i] = self.canvas.create_polygon(*island.coords(), outline='red', fill='')  # TODO: SPOT
         return
 
     def translate_map(self, x, y):
@@ -665,12 +983,49 @@ class MFM_GUI:
         elif char == "q":
             self.save_ilocs()
 
+        elif char == "l" and self.set_centers_mode and self.selected_center_ind is not None:
+            self.delete_center()
+
         return
 
+    def save_data_to_file(self):
+        write_data = ""
+        write_data += "{}".format(self.islands[0].sigma)
+        for island in self.islands[1:]:
+            write_data += "\n{}".format(island.sigma)
+
+        with open(self.save_file, 'w+') as f:
+            f.write(write_data)
+        return
 # Testing!
-# align = r'C:\Users\sophi\Documents\School\SchifferLab\disclinations\Bingham\Disclination\MFMscanning.0_00334_1.spm.png'
-# orient = r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\Bingham\Disclination\MFMscanning.0_00334_5.spm.png"
-# ideal_island_locs = r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\size2even.txt"
-# saved_locs = r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\ilocs0_00334_1.txt"
-# MFM_GUI(align, orient, ilocs=saved_locs)
+single10 = [
+    r'C:\Users\sophi\Documents\School\SchifferLab\disclinations\Bingham\Disclination\MFMscanning.0_00334_1.spm.png',
+    r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\Bingham\Disclination\MFMscanning.0_00334_5.spm.png"
+]
+single9 = [
+    r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\Bingham\Disclination\MFMscanning.0_00346_1.spm.png",
+    r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\Bingham\Disclination\MFMscanning.0_00346_5.spm.png"
+]
+
+single6 = [
+    r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\Bingham\Disclination\MFMscanning.0_00342_1.spm.png",
+    r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\Bingham\Disclination\MFMscanning.0_00342_5.spm.png"
+]
+
+single5 = [
+    r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\Bingham\Disclination\MFMscanning.0_00348_1.spm.png",
+    r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\Bingham\Disclination\MFMscanning.0_00348_5.spm.png"
+]
+
+single_10_okay = [
+    r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\Bingham\Disclination\MFMscanning.0_00332_1.spm.png",
+    r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\Bingham\Disclination\MFMscanning.0_00332_5.spm.png"
+]
+
+single_10_blurry = [
+    r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\Bingham\Disclination\MFMscanning.0_00331_cs_1.spm.png",
+    r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\Bingham\Disclination\MFMscanning.0_00331_cs_5.spm.png"
+]
+
+# MFM_GUI(*single10, 10, 'single', save_file=r'./savedresults/result.txt')
 
