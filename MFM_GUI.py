@@ -91,12 +91,11 @@ class MFM_GUI:
         self.select_mode = False
         self.current_select = None
         self.current_ind = None
-        self.selected_center_ind = None
         self.selected_island_ind = None
-        self.center_shapes = None
 
         # Initialize lists
         self.guide_points = PointList(self.canvas)
+        self.center_points = PointList(self.canvas)
 
         # Draw map of ideal island locations
         self.draw_centers()
@@ -293,7 +292,7 @@ class MFM_GUI:
         for widget in self.centers_widgets:
             widget.grid_forget()
 
-        self.hide_centers()
+        self.center_points.hide_all()
         self.build_islands_widgets()
         self.create_aligned_islands()
         return
@@ -331,25 +330,12 @@ class MFM_GUI:
         return
 
     def set_new_thresh(self, event=None):
-        if self.mode == self.SET_CENTERS_MODE:  # TODO: replace with button state
+        if self.mode == self.SET_CENTERS_MODE:  # TODO: copy paste code
             kernel = np.ones((5, 5), np.uint8)  # If the detection is bad, edit the kernel
             centers = MFM_Morph.get_centers(self.fp1, kernel, thresh=int(self.thresh_entry_var.get()))
-            r = 3
 
-            for shape in self.center_shapes:
-                self.canvas.delete(shape)
-
-            self.center_shapes = [  # TODO: These should really be combined in a class
-                self.canvas.create_oval(center[0] - r, center[1] - r, center[0] + r, center[1] + r,
-                                        outline='black', fill='red')
-                for center in centers
-            ]
-
-            self.center_paths = [
-                Path.circle(center=center, radius=r+1) for center in centers
-            ]
-
-            self.center_coords = centers
+            self.center_points.delete_all()
+            self.center_points.add_array(centers)
 
             self.current_centers_var.set("Current centers: {}".format(len(centers)))
 
@@ -365,23 +351,8 @@ class MFM_GUI:
         if self.mode == self.SET_CENTERS_MODE:  # TODO: replace with button state
             kernel = np.ones((5, 5), np.uint8)  # If the detection is bad, edit the kernel
             centers = MFM_Morph.get_centers(self.fp1, kernel)
-            r = 3
 
-            if self.center_shapes:
-                for shape in self.center_shapes:
-                    self.canvas.delete(shape)
-
-            self.center_shapes = [  # TODO: These should really be combined in a class
-                self.canvas.create_oval(center[0] - r, center[1] - r, center[0] + r, center[1] + r,
-                                        outline='black', fill='red')
-                for center in centers
-            ]
-
-            self.center_paths = [
-                Path.circle(center=center, radius=r+1) for center in centers
-            ]
-
-            self.center_coords = centers
+            self.center_points.add_array(centers)
 
             self.current_centers_var.set("Current centers: {}".format(len(centers)))
         return
@@ -392,14 +363,11 @@ class MFM_GUI:
 
         :return: none
         """
-        if self.selected_center_ind is not None:  # TODO: add state variable instead
-            self.canvas.delete(self.center_shapes[self.selected_center_ind])
-            self.center_shapes.pop(self.selected_center_ind)
-            self.center_paths.pop(self.selected_center_ind)
-            self.center_coords = np.delete(self.center_coords, self.selected_center_ind, axis=0)
-            self.selected_center_ind = None
+        if self.center_points.selected_ind is not None:  # TODO: add state variable instead
+            self.center_points.delete_point(self.center_points.selected_ind)
+            self.center_points.selected_ind = None
 
-            self.current_centers_var.set("Current centers: {}".format(len(self.center_coords)))
+            self.current_centers_var.set("Current centers: {}".format(len(self.center_points.coords)))
         return
 
     def create_aligned_islands(self):
@@ -410,7 +378,7 @@ class MFM_GUI:
         """
         ideal_inds = np.genfromtxt(self.ideal_fp, delimiter=',')  # TODO: this doesn't belong here
 
-        island_coords, theta_shift = MFM_Morph.align_centers(self.center_coords, ideal_inds[:, :2])
+        island_coords, theta_shift = MFM_Morph.align_centers(self.center_points.coords, ideal_inds[:, :2])
 
         self.islands = [
             Island(np.array([row[0][0], row[0][1]]), 20, 10, row[1][2] + theta_shift)
@@ -631,16 +599,6 @@ class MFM_GUI:
             self.canvas.itemconfigure(item, state='hidden')
         return
 
-    def show_centers(self):
-        for item in self.center_shapes:
-            self.canvas.itemconfigure(item, state='normal')
-        return
-
-    def hide_centers(self):
-        for item in self.center_shapes:
-            self.canvas.itemconfigure(item, state='hidden')
-        return
-
     def draw_color_map(self):
         """
         Color the islands according to the angle at which they're magnetized. Create legend.
@@ -704,17 +662,8 @@ class MFM_GUI:
         if self.mode == self.SET_GUIDES_MODE:
             self.guide_points.add_point([event.x, event.y])
         elif self.mode == self.SET_CENTERS_MODE:
-            r = 3
-            new_center = np.array([event.x, event.y])
-            self.center_shapes.append(
-                self.new_point(new_center)
-            )
-            self.center_paths.append(
-                Path.circle(center=new_center, radius=4)
-            )
-            self.center_coords = np.vstack([self.center_coords, new_center])
-
-            self.current_centers_var.set("Current centers: {}".format(len(self.center_coords)))
+            self.center_points.add_point([event.x, event.y])
+            self.current_centers_var.set("Current centers: {}".format(len(self.center_points.coords)))
         return
 
     def new_point(self, center, r=3, fill='red', outline='black', **kwargs):
@@ -745,21 +694,9 @@ class MFM_GUI:
             if ind is not None:
                 self.guide_points.select_point(ind)
         elif self.mode == self.SET_CENTERS_MODE:
-            r = 3  # TODO: SPOT
-            for i, center_path in enumerate(self.center_paths):
-                if center_path.contains_point((event.x, event.y)):
-                    if self.selected_center_ind is not None:
-                        self.canvas.delete(self.center_shapes[self.selected_center_ind])
-                        coords = self.center_coords[self.selected_center_ind]
-                        self.center_shapes[self.selected_center_ind] = self.canvas.create_oval(
-                            coords[0] - r, coords[1] - r, coords[0] + r, coords[1] + r,
-                            outline='black', fill='red'
-                        )
-                    self.selected_center_ind = i
-                    self.canvas.delete(self.center_shapes[i])
-                    coords = self.center_coords[i]
-                    self.center_shapes[i] = self.canvas.create_oval(coords[0]-r, coords[1]-r, coords[0]+r, coords[1]+r,
-                                                                    outline='black', fill='yellow')
+            ind = self.center_points.find_ind_by_loc([event.x, event.y])
+            if ind is not None:
+                self.center_points.select_point(ind)
         elif self.mode == self.SET_SIMGAS_MODE:
             for i, island in enumerate(self.islands):
                 if (Path(island.coords().reshape((4, 2)))).contains_point((event.x, event.y)):
@@ -799,17 +736,8 @@ class MFM_GUI:
 
         if self.mode == self.SET_GUIDES_MODE and self.guide_points.selected_ind is not None:
             self.guide_points.move_selected([delta_x, delta_y])
-        elif self.mode == self.SET_CENTERS_MODE and self.selected_center_ind is not None:
-            r = 3  # TODO: SPOT I AM BEGGING
-            new_center = self.center_coords[self.selected_center_ind] + (delta_x, delta_y)
-            self.canvas.delete(self.center_shapes[self.selected_center_ind])
-            self.center_shapes[self.selected_center_ind] = self.canvas.create_oval(
-                new_center[0] - r, new_center[1] - r, new_center[0] + r, new_center[1] + r,
-                outline='black', fill='yellow'
-            )
-            self.center_paths[self.selected_center_ind] = Path.circle(center=new_center, radius=r+1)
-            self.center_coords[self.selected_center_ind][0] = new_center[0]
-            self.center_coords[self.selected_center_ind][1] = new_center[1]
+        elif self.mode == self.SET_CENTERS_MODE and self.center_points.selected_ind is not None:
+            self.center_points.move_selected([delta_x, delta_y])
         else:
             # Set new center
             self.center = self.center + [delta_x, delta_y]
@@ -1044,8 +972,11 @@ class MFM_GUI:
         elif char == "q":
             self.save_ilocs()
 
-        elif char == "l" and self.mode == self.SET_CENTERS_MODE and self.selected_center_ind is not None:
-            self.delete_center()
+        elif char == "l":
+            if self.mode == self.SET_GUIDES_MODE and self.guide_points.selected_ind is not None:
+                self.guide_points.delete_point(self.guide_points.selected_ind)
+            elif self.mode == self.SET_CENTERS_MODE and self.center_points.selected_ind is not None:
+                self.center_points.delete_point(self.center_points.selected_ind)
 
         return
 
@@ -1094,4 +1025,4 @@ single_19 = [
 ]
 
 # Testing!
-# MFM_GUI(*single_19, 19, 'single', save_file=r'./savedresults/result.txt')
+MFM_GUI(*single_19, 19, 'single', save_file=r'./savedresults/result.txt')
