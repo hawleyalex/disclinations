@@ -8,7 +8,9 @@ from matplotlib.path import Path
 from PIL import Image, ImageTk, ImageEnhance
 
 from Island import Island
+from GUI_Helpers import PointList
 import MFM_Morph
+
 
 
 class MFM_GUI:
@@ -51,9 +53,9 @@ class MFM_GUI:
         self.n_islands = n_islands_dict['{:0>2d}'.format(self.n_side)]
 
         # Find position file
-        self.ideal_fp = r"./islandcoordinates/{}{:0>2d}.txt".format(self.ndisc, self.n_side)
+        self.ideal_fp = r"C:/Users/sh2547/Documents/lab/islandcoordinates/{}{:0>2d}.txt".format(self.ndisc, self.n_side)
 
-        # Load an image
+        # Load images, convert to black and white
         self.im1 = Image.open(fp1).convert('L')
         self.im2 = Image.open(fp2).convert('L')
 
@@ -78,12 +80,14 @@ class MFM_GUI:
         self.image_2_button = tk.Button(self.switch_image_frame, text="Im2", command=self.image_2_button_click)
         self.image_2_button.grid(row=0, column=1, sticky='nw')
 
-        self.build_centers_widgets()
+        self.build_guides_widgets()
 
         # Set state variable
-        self.set_centers_mode = True
-        self.set_islands_mode = False
-        self.set_sigmas_mode = False
+        self.SET_GUIDES_MODE = 1
+        self.SET_CENTERS_MODE = 2
+        self.SET_ISLANDS_MODE = 3
+        self.SET_SIMGAS_MODE = 4
+        self.mode = self.SET_GUIDES_MODE
         self.select_mode = False
         self.current_select = None
         self.current_ind = None
@@ -91,17 +95,45 @@ class MFM_GUI:
         self.selected_island_ind = None
         self.center_shapes = None
 
+        # Initialize lists
+        self.guide_points = PointList(self.canvas)
+
         # Draw map of ideal island locations
         self.draw_centers()
 
         # Set binds
-        self.canvas.bind('<Button-1>', self.select_center)
+        self.canvas.bind('<Button-1>', self.left_click)
         self.canvas.bind('<B1-Motion>', self.translate_map_curs)
-        self.canvas.bind('<Button-3>', self.add_center)
+        self.canvas.bind('<Button-3>', self.right_click)
         self.window.bind('<Key>', self.key_press)
 
         # Run GUI
         self.window.mainloop()
+
+        return
+
+    def build_guides_widgets(self):
+        self.guides_instructions_label = tk.Label(
+            self.window,
+            text="""
+            Place points at each of the 
+            three center islands and 
+            at all six 'corner' islands
+            
+            Right click to place
+            Left click to select and move
+            Press L to delete selection
+            """, anchor=tk.NW, justify='left'
+        )
+        self.guides_instructions_label.grid(row=2, column=1, rowspan=3)
+
+        self.guides_ok_button = tk.Button(self.window, text="Guides Ok", command=self.guides_ok)
+        self.guides_ok_button.grid(row=5, column=1)
+
+        self.guides_widgets = [
+            self.guides_instructions_label,
+            self.guides_ok_button
+        ]
 
         return
 
@@ -241,9 +273,22 @@ class MFM_GUI:
 
         return
 
+    def guides_ok(self):
+        # Change mode
+        self.mode = self.SET_CENTERS_MODE
+
+        # Swap widgets
+        for widget in self.guides_widgets:
+            widget.grid_forget()
+        self.build_centers_widgets()
+
+        # Hide guides, draw all centers
+        self.guide_points.hide_all()
+        self.draw_centers()
+        return
+
     def centers_ok(self):
-        self.set_centers_mode = False
-        self.set_islands_mode = True
+        self.mode = self.SET_ISLANDS_MODE
 
         for widget in self.centers_widgets:
             widget.grid_forget()
@@ -254,8 +299,7 @@ class MFM_GUI:
         return
 
     def islands_ok(self):
-        self.set_islands_mode = False
-        self.set_sigmas_mode = True
+        self.mode = self.SET_SIMGAS_MODE
 
         for widget in self.islands_widgets:
             widget.grid_forget()
@@ -287,7 +331,7 @@ class MFM_GUI:
         return
 
     def set_new_thresh(self, event=None):
-        if self.set_centers_mode:  # TODO: replace with button state
+        if self.mode == self.SET_CENTERS_MODE:  # TODO: replace with button state
             kernel = np.ones((5, 5), np.uint8)  # If the detection is bad, edit the kernel
             centers = MFM_Morph.get_centers(self.fp1, kernel, thresh=int(self.thresh_entry_var.get()))
             r = 3
@@ -318,7 +362,7 @@ class MFM_GUI:
         :return: none
         """
 
-        if self.set_centers_mode:  # TODO: replace with button state
+        if self.mode == self.SET_CENTERS_MODE:  # TODO: replace with button state
             kernel = np.ones((5, 5), np.uint8)  # If the detection is bad, edit the kernel
             centers = MFM_Morph.get_centers(self.fp1, kernel)
             r = 3
@@ -374,7 +418,6 @@ class MFM_GUI:
         ]
 
         self.center = np.mean(island_coords, axis=0)  # TODO: this is an odd place to define it
-        self.set_centers_mode = False
         self.draw_map()
         #self.draw_web()
         return
@@ -657,25 +700,37 @@ class MFM_GUI:
         self.canvas.tag_lower(self.image1_canvas_object)
         return
 
-    def add_center(self, event):
-        r = 3  # TODO: silksong release date is pushed back every time you do this
-        if self.set_centers_mode:
+    def right_click(self, event):
+        if self.mode == self.SET_GUIDES_MODE:
+            self.guide_points.add_point([event.x, event.y])
+        elif self.mode == self.SET_CENTERS_MODE:
+            r = 3
             new_center = np.array([event.x, event.y])
             self.center_shapes.append(
-                self.canvas.create_oval(
-                    new_center[0] - r, new_center[1] - r, new_center[0] + r, new_center[1] + r,
-                    outline='black', fill='red'
-                )
+                self.new_point(new_center)
             )
             self.center_paths.append(
-                Path.circle(center=new_center, radius=r+1)
+                Path.circle(center=new_center, radius=4)
             )
             self.center_coords = np.vstack([self.center_coords, new_center])
 
-        self.current_centers_var.set("Current centers: {}".format(len(self.center_coords)))
+            self.current_centers_var.set("Current centers: {}".format(len(self.center_coords)))
         return
 
-    def select_center(self, event):
+    def new_point(self, center, r=3, fill='red', outline='black', **kwargs):
+        """
+        Draw a point on the canvas and return the object ID of the oval.
+
+        :param center: array-like of length 2, [x, y] of point center
+        :param **kwargs: will be passed to create_oval
+        :return int: object ID of oval on canvas
+        """
+        return self.canvas.create_oval(
+                    center[0] - r, center[1] - r, center[0] + r, center[1] + r,
+                    fill=fill, outline=outline, **kwargs
+                )
+
+    def left_click(self, event):
         """
         If cursor is within a circle, select it.
 
@@ -685,7 +740,11 @@ class MFM_GUI:
         self.store_x = event.x  # TODO: These should be initialized somewhere else
         self.store_y = event.y
 
-        if self.set_centers_mode:
+        if self.mode == self.SET_GUIDES_MODE:
+            ind = self.guide_points.find_ind_by_loc([event.x, event.y])
+            if ind is not None:
+                self.guide_points.select_point(ind)
+        elif self.mode == self.SET_CENTERS_MODE:
             r = 3  # TODO: SPOT
             for i, center_path in enumerate(self.center_paths):
                 if center_path.contains_point((event.x, event.y)):
@@ -701,7 +760,7 @@ class MFM_GUI:
                     coords = self.center_coords[i]
                     self.center_shapes[i] = self.canvas.create_oval(coords[0]-r, coords[1]-r, coords[0]+r, coords[1]+r,
                                                                     outline='black', fill='yellow')
-        elif self.set_sigmas_mode:
+        elif self.mode == self.SET_SIMGAS_MODE:
             for i, island in enumerate(self.islands):
                 if (Path(island.coords().reshape((4, 2)))).contains_point((event.x, event.y)):
                     if self.selected_island_ind is not None:
@@ -738,12 +797,14 @@ class MFM_GUI:
         self.store_x = event.x
         self.store_y = event.y
 
-        if self.set_centers_mode and self.selected_center_ind is not None:
+        if self.mode == self.SET_GUIDES_MODE and self.guide_points.selected_ind is not None:
+            self.guide_points.move_selected([delta_x, delta_y])
+        elif self.mode == self.SET_CENTERS_MODE and self.selected_center_ind is not None:
             r = 3  # TODO: SPOT I AM BEGGING
             new_center = self.center_coords[self.selected_center_ind] + (delta_x, delta_y)
             self.canvas.delete(self.center_shapes[self.selected_center_ind])
             self.center_shapes[self.selected_center_ind] = self.canvas.create_oval(
-                new_center[0] - r, new_center[1] - 4, new_center[0] + r, new_center[1] + r,
+                new_center[0] - r, new_center[1] - r, new_center[0] + r, new_center[1] + r,
                 outline='black', fill='yellow'
             )
             self.center_paths[self.selected_center_ind] = Path.circle(center=new_center, radius=r+1)
@@ -983,7 +1044,7 @@ class MFM_GUI:
         elif char == "q":
             self.save_ilocs()
 
-        elif char == "l" and self.set_centers_mode and self.selected_center_ind is not None:
+        elif char == "l" and self.mode == self.SET_CENTERS_MODE and self.selected_center_ind is not None:
             self.delete_center()
 
         return
@@ -1027,5 +1088,10 @@ single_10_blurry = [
     r"C:\Users\sophi\Documents\School\SchifferLab\disclinations\Bingham\Disclination\MFMscanning.0_00331_cs_5.spm.png"
 ]
 
-# MFM_GUI(*single10, 10, 'single', save_file=r'./savedresults/result.txt')
+single_19 = [
+    r"C:\Users\sh2547\Documents\data\Left MFM\MFMscanning.0_00521_1.spm.png",
+    r"C:\Users\sh2547\Documents\data\Left MFM\MFMscanning.0_00521_5.spm.png"
+]
 
+# Testing!
+# MFM_GUI(*single_19, 19, 'single', save_file=r'./savedresults/result.txt')
