@@ -1,10 +1,14 @@
 import cv2
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 
+from matplotlib import cm
 from matplotlib.path import Path
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial import distance_matrix
+
+from Island import Island
 
 
 def get_centers(img_fp, kernel, thresh=None):
@@ -208,6 +212,15 @@ def calculate_center_placement(img_fp, ideal_fp, kernel, guide_points, thresh=No
         else:
             guides[i] = guide_points[pair[1]]
 
+    print(guides)
+
+    if angle_between(guides[0] - middle, guides[1] - middle) < 0:
+        save = guides[1].copy()
+        guides[1] = guides[2]
+        guides[2] = save
+
+    print(guides)
+
     # Distort ideal map using guide points
     ideal_guide_ids = np.array([
         0, 16,
@@ -223,51 +236,96 @@ def calculate_center_placement(img_fp, ideal_fp, kernel, guide_points, thresh=No
     B = {1: 1, 2: 3, 3: 5}
     C = {1: 6, 2: 7, 3: 8}
 
-    # plt.imshow(img0)
+    #
 
-    primary = np.array([
+    primary1 = np.array([
+        ideal_centers[ideal_guide_ids[1]],
+        ideal_centers[ideal_guide_ids[3]],
+        ideal_centers[ideal_guide_ids[5]]
+    ])
+
+    primary2 = np.array([
         ideal_centers[ideal_guide_ids[0]],
         ideal_centers[ideal_guide_ids[2]],
         ideal_centers[ideal_guide_ids[4]]
     ])
 
-    secondary = np.array([
+    secondary1 = np.array([
+        guides[0],
+        guides[1],
+        guides[2]
+    ])
+    secondary2 = np.array([
         guides[2],
         guides[0],
         guides[1]
     ])
+    secondary3 = np.array([
+        guides[1],
+        guides[2],
+        guides[0]
+    ])
+    secondary4 = np.array([
+        guides[2],
+        guides[1],
+        guides[0]
+    ])
+    secondary5 = np.array([
+        guides[0],
+        guides[2],
+        guides[1]
+    ])
+    secondary6 = np.array([
+        guides[1],
+        guides[0],
+        guides[2]
+    ])
 
-    t = affine_transformation(primary, secondary)
-    p = transform_points(t, ideal_centers)
+    t1 = affine_transformation(primary1, secondary1)
+    t2 = affine_transformation(primary1, secondary2)
+    t3 = affine_transformation(primary1, secondary3)
+    t4 = affine_transformation(primary2, secondary4)
+    t5 = affine_transformation(primary2, secondary5)
+    t6 = affine_transformation(primary2, secondary6)
+    p1 = transform_points(t1, ideal_centers)
+    p2 = transform_points(t2, ideal_centers)
+    p3 = transform_points(t3, ideal_centers)
+    p4 = transform_points(t4, ideal_centers)
+    p5 = transform_points(t5, ideal_centers)
+    p6 = transform_points(t6, ideal_centers)
 
-    # plt.plot(p[:,0], p[:,1], 'o', color='xkcd:cherry red', markersize=2)
-    # plt.show()
+    min_cost = float('inf')
+    min_i = None
+    for ind, p in enumerate([p1, p2, p3, p4, p5, p6]):
+        cost_matrix = np.zeros((len(p), len(centers)))
+        for i in range(len(p)):
+            for j in range(len(centers)):
+                # cost is square of distance
+                cost_matrix[i, j] = np.sum((p[i] - centers[j]) ** 2)
 
-    # Use linear sum assignment for the confirmed points
+        # Use linear sum assignment to move the ideal centers to the closest mfm centers
+        ideal_inds, mfm_inds = linear_sum_assignment(cost_matrix)
+        cost = cost_matrix[ideal_inds, mfm_inds].sum()
 
-    cost_matrix = np.zeros((len(p), len(centers)))
-    for i in range(len(p)):
-        for j in range(len(centers)):
-            # cost is square of distance
-            cost_matrix[i, j] = np.sum((p[i] - centers[j]) ** 2)
+        if cost < min_cost:
+            min_cost = cost
+            min_i = ind
 
-    # Use linear sum assignment to move the ideal centers to the closest mfm centers
-    ideal_inds, mfm_inds = linear_sum_assignment(cost_matrix)
+    p = [p1, p2, p3, p4, p5, p6][min_i]
+    t = [t1, t2, t3, t4, t5, t6][min_i]
 
-    # Interpolate the gaps for remaining points
+    ideal_islands = [
+        Island(point, length=0.4, width=0.2, theta=ideal_data[i, 2]) for i, point in enumerate(ideal_centers)
+    ]
 
-    # Profit?
+    if min_i in [3, 4, 5]:
+        flipped = True
+    for island in ideal_islands:
+        reshaped_coords = island.coords().reshape((4, 2))
+        transformed = transform_points(t, reshaped_coords)
+        island.enter_coords(np.squeeze(transformed.reshape((8, 1))), flipped=flipped)
 
-    sorted_island_data = np.zeros((len(p), 2))
-    j = 0
-    for i in range(len(p)):
-        if i in ideal_inds:
-            sorted_island_data[i] = centers[mfm_inds[j]]
-            j += 1
-        else:
-            sorted_island_data[i] = p[i]
-
-    return sorted_island_data
+    return ideal_islands
 
 
 def rotate(p, origin=(0, 0), angle=0):
@@ -309,11 +367,12 @@ def affine_transformation(primary, secondary):
 
 
 def transform_points(m, points):
+    trans_points = np.zeros(points.shape)
     for i, point in enumerate(points):
         x, y = point
-        points[i, 0] = x*m[0, 0] + y*m[1, 0] + m[2, 0]
-        points[i, 1] = x * m[0, 1] + y * m[1, 1] + m[2, 1]
-    return points
+        trans_points[i, 0] = x * m[0, 0] + y * m[1, 0] + m[2, 0]
+        trans_points[i, 1] = x * m[0, 1] + y * m[1, 1] + m[2, 1]
+    return trans_points
 
 
 def find_pairs(guide_points):

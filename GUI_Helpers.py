@@ -58,6 +58,7 @@ class PointList:
             Path.circle(center=center, radius=self.r + 1)
         )
         self.coords = np.vstack([self.coords, np.array(center)])
+        self.select_point(len(self.object_ids) - 1)
         return
 
     def delete_point(self, ind):

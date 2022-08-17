@@ -10,7 +10,6 @@ from GUI_Helpers import PointList, IslandList
 import MFM_Morph
 
 
-
 class MFM_GUI:
     """
     GUI for aligning islands to scans.
@@ -125,11 +124,11 @@ class MFM_GUI:
             self.window,
             text="""
             Place points at each of the 
-            three center islands and 
-            at all six 'corner' islands
+            six 'corner' islands
             
             Right click to place
             Left click to select and move
+            Arrow keys for precision move
             Press L to delete selection
             """, anchor=tk.NW, justify='left'
         )
@@ -282,16 +281,19 @@ class MFM_GUI:
 
     def guides_ok(self):
         # Change mode
-        self.mode = self.SET_CENTERS_MODE
+        # self.mode = self.SET_CENTERS_MODE
+        self.mode = self.SET_ISLANDS_MODE
 
         # Swap widgets
         for widget in self.guides_widgets:
             widget.grid_forget()
-        self.build_centers_widgets()
+        # self.build_centers_widgets()
+        self.build_islands_widgets()
 
         # Hide guides, draw all centers
         self.guide_points.hide_all()
-        self.draw_centers()
+        # self.draw_centers()
+        self.create_aligned_islands()
         return
 
     def centers_ok(self):
@@ -354,12 +356,11 @@ class MFM_GUI:
 
         if self.mode == self.SET_CENTERS_MODE:  # TODO: replace with button state
             kernel = np.ones((5, 5), np.uint8)  # If the detection is bad, edit the kernel
-            centers = MFM_Morph.calculate_center_placement(self.fp1, self.ideal_fp, kernel, self.guide_points.coords)
-            # centers = MFM_Morph.get_centers(self.fp1, kernel)
+            islands = MFM_Morph.calculate_center_placement(self.fp1, self.ideal_fp, kernel, self.guide_points.coords)
 
-            self.center_points.add_array(centers)
-
-            self.current_centers_var.set("Current centers: {}".format(len(centers)))
+            # self.center_points.add_array(centers)
+            #
+            # self.current_centers_var.set("Current centers: {}".format(len(centers)))
         return
 
     def delete_center(self):
@@ -383,12 +384,15 @@ class MFM_GUI:
         """
         ideal_inds = np.genfromtxt(self.ideal_fp, delimiter=',')  # TODO: this doesn't belong here
 
-        island_coords, theta_shift = MFM_Morph.align_centers(self.center_points.coords, ideal_inds[:, :2])
+        # island_coords, theta_shift = MFM_Morph.align_centers(self.center_points.coords, ideal_inds[:, :2])
+        #
+        # self.islands = [
+        #     Island(np.array([row[0][0], row[0][1]]), 20, 10, row[1][2] + theta_shift)
+        #     for row in zip(island_coords, ideal_inds)  # TODO: length and width should be adjustable & not here
+        # ]
 
-        self.islands = [
-            Island(np.array([row[0][0], row[0][1]]), 20, 10, row[1][2] + theta_shift)
-            for row in zip(island_coords, ideal_inds)  # TODO: length and width should be adjustable & not here
-        ]
+        kernel = np.ones((5, 5), np.uint8)  # If the detection is bad, edit the kernel
+        self.islands = MFM_Morph.calculate_center_placement(self.fp1, self.ideal_fp, kernel, self.guide_points.coords)
 
         self.island_list = IslandList(self.canvas, self.islands)
 
@@ -409,6 +413,10 @@ class MFM_GUI:
                 *self.islands[int(vertex[3])].center,
                 fill='yellow'
             )
+        return
+
+    # def draw_point_web(self):
+    #
 
     def draw_excised(self):
         """

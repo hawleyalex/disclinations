@@ -80,6 +80,11 @@ class Island:
         sin_th = np.sin(self.theta)
         cos_th = np.cos(self.theta)
 
+        # (arr[6], arr[7])___________________  (arr[0], arr[1])
+        #               |                    |
+        #               |                    |
+        #               |____________________|
+        # (arr[4], arr[5])                     (arr[2], arr[3])
         arr = np.array([
             self.center[0] + cos_th * self.length / 2 - sin_th * self.width / 2,
             self.center[1] + sin_th * self.length / 2 + cos_th * self.width / 2,
@@ -93,6 +98,15 @@ class Island:
 
         return arr
 
+    def enter_coords(self, coords, flipped=False):
+        self.center = np.array([np.mean([coords[0], coords[4]]), np.mean([coords[1], coords[5]])])
+        self.length = np.linalg.norm(coords[:2] - coords[6:])
+        self.width = np.linalg.norm(coords[:2] - coords[2:4])
+        if flipped:
+            self.theta = -angle_between(coords[:2] - coords[6:], np.array([1, 0]))
+        else:
+            self.theta = angle_between(coords[:2] - coords[6:], np.array([1, 0]))
+        return
 
 class Vertex:
     def __init__(self, ids, is_center=False, inout=None):
@@ -103,3 +117,13 @@ class Vertex:
         else:
             self.inout = ["", "", "", ""]
 
+
+def angle_between(a, b):
+    inner = np.inner(a, b)
+    norms = np.linalg.norm(a) * np.linalg.norm(b)
+
+    cos = inner / norms
+    rad = np.arccos(np.clip(cos, -1.0, 1.0))
+    if a[0] * b[1] - a[1] * b[0] < 0:
+        rad = -rad
+    return rad
