@@ -194,19 +194,6 @@ def calculate_center_placement(img_fp, ideal_fp, kernel, thresh=None):
     area_max = np.quantile(areas, 0.80)
     furthest_dist_max = np.quantile(furthest_dist, 0.80)
 
-    plt.imshow(img0)
-    for i, contour in enumerate(contours):
-        if areas[i] <= area_max:
-            if furthest_dist[i] <= furthest_dist_max:
-                plt.fill(contour[:,0], contour[:,1], edgecolor='yellow', linewidth=0.5, color='yellow')
-            else:
-                plt.fill(contour[:, 0], contour[:, 1], edgecolor='orange', linewidth=0.5, color='orange')
-        else:
-            if furthest_dist[i] <= furthest_dist_max:
-                plt.fill(contour[:, 0], contour[:, 1], edgecolor='red', linewidth=0.5, color='red')
-    #plt.show()
-
-
     guide_points = np.array([
         [166, 463], [531, 318],
         [531, 301], [217, 94],
@@ -215,26 +202,93 @@ def calculate_center_placement(img_fp, ideal_fp, kernel, thresh=None):
     ])
 
     # Distort ideal map using guide points
+    ideal_guide_ids = np.array([
+        0, 16,
+        50, 445,
+        443, 17,
+        280, 314, 312
+    ])
+
     ideal_data = np.genfromtxt(ideal_fp, delimiter=',')
     ideal_centers = ideal_data[:,:2]
-    ideal_middle = np.mean(ideal_centers, axis=0)
 
-    dist2 = np.sum((ideal_centers - ideal_middle)**2, axis=1)
-    inds = np.argsort(dist2)
-    ideal_inds = np.sort(inds)
+    sector_data = np.genfromtxt(r"C:\Users\sh2547\Documents\lab\sectordata\single19.csv", delimiter=',')
 
+    A = {1: 0, 2: 2, 3: 4}
+    B = {1: 1, 2: 3, 3: 5}
+    C = {1: 6, 2: 7, 3: 8}
 
+    colors_dict = {
+        1: 'xkcd:cherry red',
+        2: 'xkcd:purple',
+        3: 'xkcd:yellow orange'
+    }
 
+    plt.imshow(img0)
 
-    plt.clf()
-    for center in ideal_centers[inds[3:-6],:]:
-        plt.plot(*center, 'ro')
-    for center in ideal_centers[inds[-6:],:]:
-        plt.plot(*center, 'bo')
-    for center in ideal_centers[inds[:3],:]:
-        plt.plot(*center, 'bo')
-    plt.xlim((-13, 10.5))
+    # for i, j in [[1, 3], [2, 1], [3, 2]]:
+    #     primary = np.array([
+    #         ideal_centers[ideal_guide_ids[A[i]]],
+    #         ideal_centers[ideal_guide_ids[B[i]]],
+    #         ideal_centers[ideal_guide_ids[C[i]]]
+    #     ])
+    #
+    #     secondary = np.array([
+    #         guide_points[A[j]],
+    #         guide_points[B[j]],
+    #         guide_points[C[j]]
+    #     ])
+    #
+    #     sector_points = ideal_centers[sector_data[:, 1] == i, :]
+    #
+    #     transformation = affine_transformation(primary, secondary)
+    #     transformed = transform_points(transformation, sector_points)
+    #
+    #     for center in transformed:
+    #         plt.plot(*center, 'o', color=colors_dict[i], markersize=2)
+    #
+    # plt.show()
+
+    primary = np.array([
+        ideal_centers[ideal_guide_ids[0]],
+        ideal_centers[ideal_guide_ids[2]],
+        ideal_centers[ideal_guide_ids[4]]
+    ])
+
+    secondary = np.array([
+        guide_points[4],
+        guide_points[0],
+        guide_points[2]
+    ])
+
+    t = affine_transformation(primary, secondary)
+    p = transform_points(t, ideal_centers)
+
+    plt.plot(p[:,0], p[:,1], 'o', color='xkcd:cherry red', markersize=2)
     plt.show()
+
+
+    # fitted_points1 = fit_sector(1, 3, ideal_centers, ideal_guide_ids, guide_points, sector_data, img0)
+    # fitted_points2 = fit_sector(2, 1, ideal_centers, ideal_guide_ids, guide_points, sector_data, img0)
+    # fitted_points3 = fit_sector(3, 2, ideal_centers, ideal_guide_ids, guide_points, sector_data, img0)
+
+
+    # for i, contour in enumerate(contours):
+    #     if areas[i] <= area_max:
+    #         if furthest_dist[i] <= furthest_dist_max:
+    #             plt.fill(contour[:, 0], contour[:, 1], edgecolor='yellow', linewidth=0.5, color='yellow')
+    #         else:
+    #             plt.fill(contour[:, 0], contour[:, 1], edgecolor='orange', linewidth=0.5, color='orange')
+    #     else:
+    #         if furthest_dist[i] <= furthest_dist_max:
+    #             plt.fill(contour[:, 0], contour[:, 1], edgecolor='red', linewidth=0.5, color='red')
+
+    # for center in fitted_points1:
+    #     plt.plot(*center, 'o', color='red', markersize=2)
+    # for center in fitted_points2:
+    #     plt.plot(*center, 'o', color='xkcd:azure', markersize=2)
+    # for center in fitted_points3:
+    #     plt.plot(*center, 'o', color='xkcd:green', markersize=2)
 
     real_middle = np.mean(guide_points[5:9], axis=0)
 
@@ -244,3 +298,177 @@ def calculate_center_placement(img_fp, ideal_fp, kernel, thresh=None):
 
     # Profit?
     return
+
+
+def extra_stuff_for_getting_info(ideal_data, ideal_guide_ids):
+    ideal_centers = ideal_data[:,0:2]
+
+    ideal_center = np.mean(ideal_centers[ideal_guide_ids[6:9], :], axis=0) + np.array([0.1, 0])
+    pair1_center = np.mean(ideal_centers[ideal_guide_ids[[0, 5]], :], axis=0)
+    pair2_center = np.mean(ideal_centers[ideal_guide_ids[1:3], :], axis=0)
+    pair3_center = np.mean(ideal_centers[ideal_guide_ids[3:5], :], axis=0)
+
+    m1, b1 = np.polyfit([ideal_center[0], pair1_center[0]], [ideal_center[1], pair1_center[1]], 1)
+    m2, b2 = np.polyfit([ideal_center[0], pair2_center[0]], [ideal_center[1], pair2_center[1]], 1)
+    m3, b3 = np.polyfit([ideal_center[0], pair3_center[0]], [ideal_center[1], pair3_center[1]], 1)
+
+    guide = np.zeros(len(ideal_centers))
+    guide[ideal_guide_ids] = np.array([1, 2, 1, 2, 1, 2, 3, 3, 3])
+    sector = np.zeros(len(ideal_centers))
+
+    for i, center in enumerate(ideal_centers):
+        if m1*center[0] + b1 > center[1]:
+            if m2*center[0] + b2 > center[1]:
+                plt.plot(*center, 'bo', markersize=2)
+                sector[i] = 1
+            else:
+                plt.plot(*center, 'ro', markersize=2)
+                sector[i] = 2
+        else:
+            if m3*center[0] + b3 > center[1]:
+                plt.plot(*center, 'ro', markersize=2)
+                sector[i] = 2
+            else:
+                plt.plot(*center, 'go', markersize=2)
+                sector[i] = 3
+    plt.plot([ideal_center[0], pair1_center[0]], [ideal_center[1], pair1_center[1]], color='pink', linewidth=1)
+    plt.plot([ideal_center[0], pair2_center[0]], [ideal_center[1], pair2_center[1]], color='pink', linewidth=1)
+    plt.plot([ideal_center[0], pair3_center[0]], [ideal_center[1], pair3_center[1]], color='pink', linewidth=1)
+    plt.xlim((-13, 10.5))
+    plt.show()
+
+    sector_data = np.vstack([guide, sector]).T
+    np.savetxt(r"C:\Users\sh2547\Documents\lab\sectordata\single19.csv", sector_data, delimiter=",")
+
+    if True:
+        sector_data = np.genfromtxt(r"C:\Users\sh2547\Documents\lab\sectordata\single19.csv", delimiter=',')
+        for i, center in enumerate(ideal_centers):
+            color = {
+                1: "bo",
+                2: "ro",
+                3: "go"
+            }[sector_data[i, 1]]
+            plt.plot(*center, color, markersize=2)
+
+    return
+
+
+def rotate(p, origin=(0, 0), angle=0):
+    R = np.array([[np.cos(angle), -np.sin(angle)],
+                  [np.sin(angle),  np.cos(angle)]])
+    o = np.atleast_2d(origin)
+    p = np.atleast_2d(p)
+    return np.squeeze((R @ (p.T-o.T) + o.T).T)
+
+
+def angle_between(a, b):
+
+    inner = np.inner(a, b)
+    norms = np.linalg.norm(a) * np.linalg.norm(b)
+
+    cos = inner / norms
+    rad = np.arccos(np.clip(cos, -1.0, 1.0))
+    if a[0] * b[1] - a[1] * b[0] < 0:
+        rad = -rad
+    return rad
+
+
+def fit_sector(ideal, fit_to, ideal_centers, ideal_guide_ids, guide_points, sector_data, img):
+    A = {1: 0, 2: 2, 3: 4}[ideal]
+    B = {1: 1, 2: 3, 3: 5}[ideal]
+    C = {1: 6, 2: 7, 3: 8}[ideal]
+    I = {1: 0, 2: 2, 3: 4}[fit_to]
+    J = {1: 1, 2: 3, 3: 5}[fit_to]
+    K = {1: 6, 2: 7, 3: 8}[fit_to]
+
+    points = ideal_centers[sector_data[:, 1] == ideal, :]
+    # show_points(points, img)
+
+    # Translate to origin
+    delta_origin = -ideal_centers[ideal_guide_ids[A]]
+    points += delta_origin
+    # show_points(points, img)
+
+    # Make horizontal
+    theta1 = angle_between(ideal_centers[ideal_guide_ids[B]] - ideal_centers[ideal_guide_ids[A]], np.array([1, 0]))
+    points = rotate(points, angle=theta1)
+    # show_points(points, img)
+
+    # Flip over x if needed
+    if rotate(ideal_centers[ideal_guide_ids[C]],
+              ideal_centers[ideal_guide_ids[A]],
+              theta1)[1] > ideal_centers[ideal_guide_ids[A]][1]:
+        bool1 = 1
+    else:
+        bool1 = 0
+    theta3 = angle_between(guide_points[J] - guide_points[I], (1, 0))
+    if rotate(guide_points[K], guide_points[I], theta3)[1] > guide_points[I][1]:
+        bool2 = 1
+    else:
+        bool2 = 0
+    if bool1 != bool2:
+        points[:, 1] *= -1
+    # show_points(points, img)
+
+    # Dilate along base of triangle
+    horizonal_factor = np.linalg.norm(
+        guide_points[J] - guide_points[I]) / np.linalg.norm(
+        ideal_centers[ideal_guide_ids[B]] - ideal_centers[ideal_guide_ids[A]])
+
+    points[:, 0] *= horizonal_factor
+    # show_points(points, img)
+
+    # Dialate along height of triangle
+    vertical_factor = np.linalg.norm(
+        (guide_points[I] + guide_points[J]) / 2 - guide_points[K]) / np.linalg.norm(
+        (ideal_centers[ideal_guide_ids[A]] + ideal_centers[ideal_guide_ids[B]]) / 2 - ideal_centers[ideal_guide_ids[C]])
+    points[:, 1] *= vertical_factor
+    # show_points(points, img)
+
+    # Translate
+    translate_delta = guide_points[I] - ideal_centers[ideal_guide_ids[A]]
+    points = points - delta_origin + translate_delta
+    # show_points(points, img)
+
+    # Rotate
+    theta2 = angle_between(np.array([1, 0]), guide_points[J] - guide_points[I])
+    points = rotate(points, origin=guide_points[I], angle=theta2)
+    # show_points(points, img)
+
+    return points
+
+
+def show_points(points, img):
+    plt.imshow(img)
+
+    for center in points:
+        plt.plot(*center, 'ro', markersize=2)
+    plt.show()
+    return
+
+
+def affine_transformation(primary, secondary):
+    n = primary.shape[0]
+    pad = lambda x: np.hstack([x, np.ones((x.shape[0], 1))])
+    unpad = lambda x: x[:, :-1]
+    X = pad(primary)
+    Y = pad(secondary)
+
+    # Solve the least squares problem X * A = Y
+    # to find our transformation matrix A
+    A, res, rank, s = np.linalg.lstsq(X, Y, rcond=None)
+
+    transform = lambda x: unpad(np.dot(pad(x), A))
+
+    A[np.abs(A) < 1e-10] = 0  # set really small values to zero
+
+    return A
+
+
+def transform_points(m, points):
+    for i, point in enumerate(points):
+        x, y = point
+        points[i, 0] = x*m[0, 0] + y*m[1, 0] + m[2, 0]
+        points[i, 1] = x * m[0, 1] + y * m[1, 1] + m[2, 1]
+    return points
+
