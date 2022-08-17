@@ -4,6 +4,7 @@ import numpy as np
 
 from matplotlib.path import Path
 from scipy.optimize import linear_sum_assignment
+from scipy.spatial import distance_matrix
 
 
 def get_centers(img_fp, kernel, thresh=None):
@@ -138,7 +139,7 @@ def align_centers(mfm_centers, ideal_centers):
     return sorted_island_data, theta_shift
 
 
-def calculate_center_placement(img_fp, ideal_fp, kernel, thresh=None):
+def calculate_center_placement(img_fp, ideal_fp, kernel, guide_points, thresh=None):
     # All the morphology stuff, get the centers
     img0 = cv2.imread(img_fp)
     img = cv2.imread(img_fp, cv2.IMREAD_GRAYSCALE)
@@ -159,7 +160,7 @@ def calculate_center_placement(img_fp, ideal_fp, kernel, thresh=None):
     contours_all_pts, hierarchy = cv2.findContours(opening, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     contours = [contour.reshape(-1, 2) for contour in contours]
 
-    centers = [np.mean(contour.reshape(-1, 2), axis=0) for contour in contours_all_pts]
+    all_centers = [np.mean(contour.reshape(-1, 2), axis=0) for contour in contours_all_pts]
 
     # Get area of each contour
     paths = [Path(contour) for contour in contours]
@@ -191,15 +192,21 @@ def calculate_center_placement(img_fp, ideal_fp, kernel, thresh=None):
     # plt.show()
     # plt.clf()
 
-    area_max = np.quantile(areas, 0.80)
-    furthest_dist_max = np.quantile(furthest_dist, 0.80)
+    area_max = np.quantile(areas, 0.75)
+    furthest_dist_max = np.quantile(furthest_dist, 0.75)
 
-    guide_points = np.array([
-        [166, 463], [531, 318],
-        [531, 301], [217, 94],
-        [202, 100], [152, 454],
-        [294, 302], [297, 292], [283, 295]
-    ])
+    index_array = np.array((areas <= area_max) & (furthest_dist <= furthest_dist_max))
+
+    centers = np.array(all_centers)[index_array]
+
+    guides = np.zeros((3, 2))
+    middle = np.mean(guide_points, axis=0)
+    pairs = find_pairs(guide_points)
+    for i, pair in enumerate(pairs):
+        if angle_between(guide_points[pair[0]] - middle, guide_points[pair[1]] - middle) > 0:
+            guides[i] = guide_points[pair[0]]
+        else:
+            guides[i] = guide_points[pair[1]]
 
     # Distort ideal map using guide points
     ideal_guide_ids = np.array([
@@ -212,42 +219,11 @@ def calculate_center_placement(img_fp, ideal_fp, kernel, thresh=None):
     ideal_data = np.genfromtxt(ideal_fp, delimiter=',')
     ideal_centers = ideal_data[:,:2]
 
-    sector_data = np.genfromtxt(r"C:\Users\sh2547\Documents\lab\sectordata\single19.csv", delimiter=',')
-
     A = {1: 0, 2: 2, 3: 4}
     B = {1: 1, 2: 3, 3: 5}
     C = {1: 6, 2: 7, 3: 8}
 
-    colors_dict = {
-        1: 'xkcd:cherry red',
-        2: 'xkcd:purple',
-        3: 'xkcd:yellow orange'
-    }
-
-    plt.imshow(img0)
-
-    # for i, j in [[1, 3], [2, 1], [3, 2]]:
-    #     primary = np.array([
-    #         ideal_centers[ideal_guide_ids[A[i]]],
-    #         ideal_centers[ideal_guide_ids[B[i]]],
-    #         ideal_centers[ideal_guide_ids[C[i]]]
-    #     ])
-    #
-    #     secondary = np.array([
-    #         guide_points[A[j]],
-    #         guide_points[B[j]],
-    #         guide_points[C[j]]
-    #     ])
-    #
-    #     sector_points = ideal_centers[sector_data[:, 1] == i, :]
-    #
-    #     transformation = affine_transformation(primary, secondary)
-    #     transformed = transform_points(transformation, sector_points)
-    #
-    #     for center in transformed:
-    #         plt.plot(*center, 'o', color=colors_dict[i], markersize=2)
-    #
-    # plt.show()
+    # plt.imshow(img0)
 
     primary = np.array([
         ideal_centers[ideal_guide_ids[0]],
@@ -256,101 +232,42 @@ def calculate_center_placement(img_fp, ideal_fp, kernel, thresh=None):
     ])
 
     secondary = np.array([
-        guide_points[4],
-        guide_points[0],
-        guide_points[2]
+        guides[2],
+        guides[0],
+        guides[1]
     ])
 
     t = affine_transformation(primary, secondary)
     p = transform_points(t, ideal_centers)
 
-    plt.plot(p[:,0], p[:,1], 'o', color='xkcd:cherry red', markersize=2)
-    plt.show()
-
-
-    # fitted_points1 = fit_sector(1, 3, ideal_centers, ideal_guide_ids, guide_points, sector_data, img0)
-    # fitted_points2 = fit_sector(2, 1, ideal_centers, ideal_guide_ids, guide_points, sector_data, img0)
-    # fitted_points3 = fit_sector(3, 2, ideal_centers, ideal_guide_ids, guide_points, sector_data, img0)
-
-
-    # for i, contour in enumerate(contours):
-    #     if areas[i] <= area_max:
-    #         if furthest_dist[i] <= furthest_dist_max:
-    #             plt.fill(contour[:, 0], contour[:, 1], edgecolor='yellow', linewidth=0.5, color='yellow')
-    #         else:
-    #             plt.fill(contour[:, 0], contour[:, 1], edgecolor='orange', linewidth=0.5, color='orange')
-    #     else:
-    #         if furthest_dist[i] <= furthest_dist_max:
-    #             plt.fill(contour[:, 0], contour[:, 1], edgecolor='red', linewidth=0.5, color='red')
-
-    # for center in fitted_points1:
-    #     plt.plot(*center, 'o', color='red', markersize=2)
-    # for center in fitted_points2:
-    #     plt.plot(*center, 'o', color='xkcd:azure', markersize=2)
-    # for center in fitted_points3:
-    #     plt.plot(*center, 'o', color='xkcd:green', markersize=2)
-
-    real_middle = np.mean(guide_points[5:9], axis=0)
+    # plt.plot(p[:,0], p[:,1], 'o', color='xkcd:cherry red', markersize=2)
+    # plt.show()
 
     # Use linear sum assignment for the confirmed points
+
+    cost_matrix = np.zeros((len(p), len(centers)))
+    for i in range(len(p)):
+        for j in range(len(centers)):
+            # cost is square of distance
+            cost_matrix[i, j] = np.sum((p[i] - centers[j]) ** 2)
+
+    # Use linear sum assignment to move the ideal centers to the closest mfm centers
+    ideal_inds, mfm_inds = linear_sum_assignment(cost_matrix)
 
     # Interpolate the gaps for remaining points
 
     # Profit?
-    return
 
-
-def extra_stuff_for_getting_info(ideal_data, ideal_guide_ids):
-    ideal_centers = ideal_data[:,0:2]
-
-    ideal_center = np.mean(ideal_centers[ideal_guide_ids[6:9], :], axis=0) + np.array([0.1, 0])
-    pair1_center = np.mean(ideal_centers[ideal_guide_ids[[0, 5]], :], axis=0)
-    pair2_center = np.mean(ideal_centers[ideal_guide_ids[1:3], :], axis=0)
-    pair3_center = np.mean(ideal_centers[ideal_guide_ids[3:5], :], axis=0)
-
-    m1, b1 = np.polyfit([ideal_center[0], pair1_center[0]], [ideal_center[1], pair1_center[1]], 1)
-    m2, b2 = np.polyfit([ideal_center[0], pair2_center[0]], [ideal_center[1], pair2_center[1]], 1)
-    m3, b3 = np.polyfit([ideal_center[0], pair3_center[0]], [ideal_center[1], pair3_center[1]], 1)
-
-    guide = np.zeros(len(ideal_centers))
-    guide[ideal_guide_ids] = np.array([1, 2, 1, 2, 1, 2, 3, 3, 3])
-    sector = np.zeros(len(ideal_centers))
-
-    for i, center in enumerate(ideal_centers):
-        if m1*center[0] + b1 > center[1]:
-            if m2*center[0] + b2 > center[1]:
-                plt.plot(*center, 'bo', markersize=2)
-                sector[i] = 1
-            else:
-                plt.plot(*center, 'ro', markersize=2)
-                sector[i] = 2
+    sorted_island_data = np.zeros((len(p), 2))
+    j = 0
+    for i in range(len(p)):
+        if i in ideal_inds:
+            sorted_island_data[i] = centers[mfm_inds[j]]
+            j += 1
         else:
-            if m3*center[0] + b3 > center[1]:
-                plt.plot(*center, 'ro', markersize=2)
-                sector[i] = 2
-            else:
-                plt.plot(*center, 'go', markersize=2)
-                sector[i] = 3
-    plt.plot([ideal_center[0], pair1_center[0]], [ideal_center[1], pair1_center[1]], color='pink', linewidth=1)
-    plt.plot([ideal_center[0], pair2_center[0]], [ideal_center[1], pair2_center[1]], color='pink', linewidth=1)
-    plt.plot([ideal_center[0], pair3_center[0]], [ideal_center[1], pair3_center[1]], color='pink', linewidth=1)
-    plt.xlim((-13, 10.5))
-    plt.show()
+            sorted_island_data[i] = p[i]
 
-    sector_data = np.vstack([guide, sector]).T
-    np.savetxt(r"C:\Users\sh2547\Documents\lab\sectordata\single19.csv", sector_data, delimiter=",")
-
-    if True:
-        sector_data = np.genfromtxt(r"C:\Users\sh2547\Documents\lab\sectordata\single19.csv", delimiter=',')
-        for i, center in enumerate(ideal_centers):
-            color = {
-                1: "bo",
-                2: "ro",
-                3: "go"
-            }[sector_data[i, 1]]
-            plt.plot(*center, color, markersize=2)
-
-    return
+    return sorted_island_data
 
 
 def rotate(p, origin=(0, 0), angle=0):
@@ -371,80 +288,6 @@ def angle_between(a, b):
     if a[0] * b[1] - a[1] * b[0] < 0:
         rad = -rad
     return rad
-
-
-def fit_sector(ideal, fit_to, ideal_centers, ideal_guide_ids, guide_points, sector_data, img):
-    A = {1: 0, 2: 2, 3: 4}[ideal]
-    B = {1: 1, 2: 3, 3: 5}[ideal]
-    C = {1: 6, 2: 7, 3: 8}[ideal]
-    I = {1: 0, 2: 2, 3: 4}[fit_to]
-    J = {1: 1, 2: 3, 3: 5}[fit_to]
-    K = {1: 6, 2: 7, 3: 8}[fit_to]
-
-    points = ideal_centers[sector_data[:, 1] == ideal, :]
-    # show_points(points, img)
-
-    # Translate to origin
-    delta_origin = -ideal_centers[ideal_guide_ids[A]]
-    points += delta_origin
-    # show_points(points, img)
-
-    # Make horizontal
-    theta1 = angle_between(ideal_centers[ideal_guide_ids[B]] - ideal_centers[ideal_guide_ids[A]], np.array([1, 0]))
-    points = rotate(points, angle=theta1)
-    # show_points(points, img)
-
-    # Flip over x if needed
-    if rotate(ideal_centers[ideal_guide_ids[C]],
-              ideal_centers[ideal_guide_ids[A]],
-              theta1)[1] > ideal_centers[ideal_guide_ids[A]][1]:
-        bool1 = 1
-    else:
-        bool1 = 0
-    theta3 = angle_between(guide_points[J] - guide_points[I], (1, 0))
-    if rotate(guide_points[K], guide_points[I], theta3)[1] > guide_points[I][1]:
-        bool2 = 1
-    else:
-        bool2 = 0
-    if bool1 != bool2:
-        points[:, 1] *= -1
-    # show_points(points, img)
-
-    # Dilate along base of triangle
-    horizonal_factor = np.linalg.norm(
-        guide_points[J] - guide_points[I]) / np.linalg.norm(
-        ideal_centers[ideal_guide_ids[B]] - ideal_centers[ideal_guide_ids[A]])
-
-    points[:, 0] *= horizonal_factor
-    # show_points(points, img)
-
-    # Dialate along height of triangle
-    vertical_factor = np.linalg.norm(
-        (guide_points[I] + guide_points[J]) / 2 - guide_points[K]) / np.linalg.norm(
-        (ideal_centers[ideal_guide_ids[A]] + ideal_centers[ideal_guide_ids[B]]) / 2 - ideal_centers[ideal_guide_ids[C]])
-    points[:, 1] *= vertical_factor
-    # show_points(points, img)
-
-    # Translate
-    translate_delta = guide_points[I] - ideal_centers[ideal_guide_ids[A]]
-    points = points - delta_origin + translate_delta
-    # show_points(points, img)
-
-    # Rotate
-    theta2 = angle_between(np.array([1, 0]), guide_points[J] - guide_points[I])
-    points = rotate(points, origin=guide_points[I], angle=theta2)
-    # show_points(points, img)
-
-    return points
-
-
-def show_points(points, img):
-    plt.imshow(img)
-
-    for center in points:
-        plt.plot(*center, 'ro', markersize=2)
-    plt.show()
-    return
 
 
 def affine_transformation(primary, secondary):
@@ -472,3 +315,29 @@ def transform_points(m, points):
         points[i, 1] = x * m[0, 1] + y * m[1, 1] + m[2, 1]
     return points
 
+
+def find_pairs(guide_points):
+    dmat = distance_matrix(guide_points, guide_points)
+    # print(dmat)
+    # print(np.sort(dmat.flatten()))
+    # inds = np.where(0 < dmat < np.sort(dmat.flatten)[12])
+    # print(inds)
+
+    pairs_found = 0
+    pairs = np.full((3, 2), -1)
+    for i, row in enumerate(dmat):
+        match = np.argpartition(row, 1)[1]
+        if pairs_found:
+            new = True
+            for found_pair in pairs[:pairs_found,]:
+                if found_pair[0] == match:
+                    new = False
+            if new:
+                pairs[pairs_found] = np.array([i, match])
+                pairs_found += 1
+                if pairs_found == 3:
+                    return pairs
+        else:
+            pairs[pairs_found] = np.array([i, match])
+            pairs_found += 1
+    return None

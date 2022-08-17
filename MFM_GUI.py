@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 import numpy as np
 import tkinter as tk
 
@@ -105,8 +106,14 @@ class MFM_GUI:
         self.canvas.bind('<Button-3>', self.right_click)
         self.window.bind('<Key>', self.key_press)
 
-        kernel = np.ones((5, 5), np.uint8)  # If the detection is bad, edit the kernel
-        # MFM_Morph.calculate_center_placement(self.fp1, self.ideal_fp, kernel)
+        # ideal_data = np.genfromtxt(self.ideal_fp, delimiter=',')
+        # ideal_islands = [
+        #     Island(data[0:2], 0.5, 0.25, data[2]) for data in ideal_data
+        # ]
+        # for i, island in enumerate(ideal_islands):
+        #     plt.fill(island.coords()[::2], island.coords()[1::2], color='yellow')
+        #     plt.text(*island.center, i, fontsize=5, ha='center', va='center')
+        # plt.show()
 
         # Run GUI
         self.window.mainloop()
@@ -313,21 +320,13 @@ class MFM_GUI:
     def change_island_length(self, event=None):
         length = int(self.island_length_var.get())
 
-        for island in self.islands:
-            island.length = length
-
-        self.delete_map()
-        self.draw_map()
+        self.island_list.set_length(length)
         return
 
     def change_island_width(self, event=None):
         width = int(self.island_width_var.get())
 
-        for island in self.islands:
-            island.width = width
-
-        self.delete_map()
-        self.draw_map()
+        self.island_list.set_width(width)
         return
 
     def set_new_thresh(self, event=None):
@@ -355,8 +354,8 @@ class MFM_GUI:
 
         if self.mode == self.SET_CENTERS_MODE:  # TODO: replace with button state
             kernel = np.ones((5, 5), np.uint8)  # If the detection is bad, edit the kernel
-            MFM_Morph.calculate_center_placement(self.fp1, kernel)
-            centers = MFM_Morph.get_centers(self.fp1, kernel)
+            centers = MFM_Morph.calculate_center_placement(self.fp1, self.ideal_fp, kernel, self.guide_points.coords)
+            # centers = MFM_Morph.get_centers(self.fp1, kernel)
 
             self.center_points.add_array(centers)
 

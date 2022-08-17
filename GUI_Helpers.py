@@ -284,3 +284,22 @@ class IslandList:
             )
         self.canvas.tag_raise(self.sigma_select_id, self.sigma_ids[self.selected_ind])
         return
+
+    def delete_all(self):
+        for object_id in self.object_ids:
+            self.canvas.delete(object_id)
+        return
+
+    def set_length(self, length):
+        for island in self.islands:
+            island.length = length
+        self.delete_all()
+        self.make_id_and_path()
+        return
+
+    def set_width(self, width):
+        for island in self.islands:
+            island.width = width
+        self.delete_all()
+        self.make_id_and_path()
+        return
