@@ -106,7 +106,12 @@ class Island:
             self.theta = -angle_between(coords[:2] - coords[6:], np.array([1, 0]))
         else:
             self.theta = angle_between(coords[:2] - coords[6:], np.array([1, 0]))
+        if self.theta >= np.pi / 2:
+            self.theta -= np.pi
+        elif self.theta < -np.pi / 2:
+            self.theta += np.pi
         return
+
 
 class Vertex:
     def __init__(self, ids, is_center=False, inout=None):

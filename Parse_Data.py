@@ -1,23 +1,33 @@
 import numpy as np
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+
+from matplotlib import cm
 
 from Island import Island, Vertex
 
 
-def parse_data(island_data_fp, sigma_fp, vertex_fp):
-    island_data = np.genfromtxt(island_data_fp, delimiter=',')
-    sigma_data = np.genfromtxt(sigma_fp, delimiter=',')
+def parse_data(data_fp, vertex_fp):
+    island_data = np.genfromtxt(data_fp, delimiter=',', skip_header=1)
     vertex_data = np.genfromtxt(vertex_fp, delimiter=',', dtype=np.uint8)
-
-    sigma_data = sigma_data.reshape((len(sigma_data), 1))
-    complete_data = np.hstack([island_data, sigma_data])
 
     islands = [
         Island(
-            np.array([float(row[0]), float(row[1])]),
-            0, 0, float(row[2]), sigma=int(row[3])
+            np.array([float(row[1]), float(row[2])]),
+            14, 7, float(row[3]), sigma=int(row[4])
         )
-        for row in complete_data
+        for row in island_data
     ]
+
+    cmap = plt.get_cmap('hsv')
+    norm = mpl.colors.Normalize(vmin=0, vmax=2 * np.pi)
+    scalar_map = cm.ScalarMappable(norm=norm, cmap=cmap)
+    color_wheel = lambda isl: mpl.colors.rgb2hex(scalar_map.to_rgba(
+            (isl.theta + (lambda x: 0 if x == 1 else np.pi)(isl.sigma)) % (2 * np.pi)))
+
+    for island in islands:
+        plt.fill(island.coords()[::2], -island.coords()[1::2], color=color_wheel(island))
+    plt.show()
 
     vertices = [
         Vertex(row) for row in vertex_data[:-1]
@@ -48,7 +58,6 @@ def parse_data(island_data_fp, sigma_fp, vertex_fp):
         adj_th2 = island2.theta % (2 * np.pi)
         adj_th3 = (island3.theta + np.pi) % (2 * np.pi)
 
-
         if abs(theta1 - (adj_th0)) < (np.pi / 2):
             if island0.sigma == 1:
                 vertex.inout[0] = 'in'
@@ -71,7 +80,7 @@ def parse_data(island_data_fp, sigma_fp, vertex_fp):
             else:
                 vertex.inout[1] = 'in'
 
-        if abs(theta2 - (adj_th2)) < (np.pi / 2):
+        if abs(theta2 - adj_th2) < (np.pi / 2):
             if island2.sigma == 1:
                 vertex.inout[2] = 'in'
             else:

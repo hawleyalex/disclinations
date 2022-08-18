@@ -211,15 +211,12 @@ def calculate_center_placement(img_fp, ideal_fp, kernel, guide_points, thresh=No
             guides[i] = guide_points[pair[0]]
         else:
             guides[i] = guide_points[pair[1]]
-
-    print(guides)
+            guides[i] = guide_points[pair[1]]
 
     if angle_between(guides[0] - middle, guides[1] - middle) < 0:
         save = guides[1].copy()
         guides[1] = guides[2]
         guides[2] = save
-
-    print(guides)
 
     # Distort ideal map using guide points
     ideal_guide_ids = np.array([
