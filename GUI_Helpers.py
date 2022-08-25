@@ -10,7 +10,7 @@ from Island import Island
 
 
 class PointList:
-    def __init__(self, canvas, r=3, outline='black', fill='red', select_fill='yellow'):
+    def __init__(self, canvas, r=5, outline='black', fill='red', select_fill='yellow'):
         self.canvas = canvas
         self.r = r
         self.outline = outline
@@ -69,7 +69,7 @@ class PointList:
         return
 
     def select_point(self, ind):
-        if self.selected_ind is not None:
+        if self.selected_ind is not None and self.selected_ind < len(self.object_ids):
             self.canvas.itemconfig(self.object_ids[self.selected_ind], fill=self.fill)
         self.selected_ind = ind
         self.canvas.itemconfig(self.object_ids[self.selected_ind], fill=self.select_fill)
@@ -117,13 +117,14 @@ class IslandList:
         self.fill = ''
         self.outline = 'red'
         self.selected_outline = 'yellow'
-        self.selected_lwd = 1
+        self.lwd = 2
+        self.selected_lwd = 2
 
         self.sigma_fill = lambda island: mpl.colors.rgb2hex(scalar_map.to_rgba(
             (island.theta + (lambda x: 0 if x == 1 else np.pi)(island.sigma)) % (2 * np.pi)))
         self.sigma_outline = ''
         self.sigma_selected_outline = 'yellow'
-        self.sigma_selected_lwd = 3
+        self.sigma_selected_lwd = 4
 
         self.make_id_and_path()
 
@@ -139,7 +140,8 @@ class IslandList:
         return
 
     def make_id_and_path(self):
-        self.object_ids = [self.canvas.create_polygon(*island.coords(), outline=self.outline, fill=self.fill)
+        self.object_ids = [self.canvas.create_polygon(*island.coords(), outline=self.outline, fill=self.fill,
+                                                      width=self.lwd)
                            for island in self.islands]
         self.paths = [Path(island.coords().reshape((4, 2))) for island in self.islands]
         return
