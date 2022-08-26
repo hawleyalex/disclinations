@@ -9,7 +9,6 @@ from matplotlib import cm
 from matplotlib.path import Path
 from PIL import Image, ImageTk, ImageEnhance
 
-from Island import Island
 from GUI_Helpers import PointList, IslandList
 import MFM_Morph
 
@@ -18,7 +17,7 @@ class MFM_GUI:
     """
     GUI for aligning islands to scans.
     """
-    def __init__(self, fp1, fp2, n, ndisc='single', ilocs=None, save_file=None):
+    def __init__(self, fp1, fp2, n, save_file):
         """
         Initialize GUI.
 
@@ -40,8 +39,6 @@ class MFM_GUI:
         self.fp1 = fp1
         self.fp2 = fp2
         self.n_side = n
-        self.ndisc = ndisc
-        self.ilocs = ilocs
         self.save_file = save_file
 
         n_islands_dict = {
@@ -58,7 +55,7 @@ class MFM_GUI:
         self.n_islands = n_islands_dict['{:0>2d}'.format(self.n_side)]
 
         # Find position file
-        self.ideal_fp = r"./islandcoordinates/{}{:0>2d}.txt".format(self.ndisc, self.n_side)
+        self.ideal_fp = r"./islandcoordinates/single{:0>2d}.txt".format(self.n_side)
 
         # Load images, convert to black and white
         self.im1 = Image.open(fp1).convert('L')
@@ -79,6 +76,7 @@ class MFM_GUI:
 
         # Create tk window
         self.window = tk.Tk()
+        self.window.iconbitmap(r'./icon.ico')
         self.window.geometry(
             "{}x{}".format(im_x + 350, im_y + 50))
 
