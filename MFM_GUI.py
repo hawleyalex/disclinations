@@ -1,5 +1,4 @@
 import matplotlib as mpl
-import matplotlib.image as mpimg
 import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 import numpy as np
@@ -243,7 +242,7 @@ class MFM_GUI:
         self.islands_instructions_label.grid(row=2, column=1, rowspan=2)
 
         self.island_size_frame = tk.Frame(self.window)
-        self.island_size_frame.grid(row=4, column=1, rowspan=2)
+        self.island_size_frame.grid(row=4, column=1)
 
         self.island_length_label = tk.Label(self.island_size_frame, text="Island length: ")
         self.island_length_label.grid(row=1, column=1)
@@ -256,6 +255,9 @@ class MFM_GUI:
 
         self.island_width_entry = tk.Entry(self.island_size_frame, textvariable=self.island_width_var)
         self.island_width_entry.grid(row=2, column=2)
+
+        self.try_again_button = tk.Button(self.window, text="Try again", command=self.change_transformation)
+        self.try_again_button.grid(row=5, column=1)
 
         self.islands_ok_button = tk.Button(self.window, text="Islands Ok", command=self.to_sigmas)
         self.islands_ok_button.grid(row=6, column=1)
@@ -394,11 +396,17 @@ class MFM_GUI:
 
     def set_new_thresh(self, event=None):
         kernel = np.ones((5, 5), np.uint8)  # If the detection is bad, edit the kernel
-        centers = MFM_Morph.calculate_center_placement(self.fp1, self.newsize, kernel, thresh=int(self.thresh_entry_var.get()))
+        centers = MFM_Morph.calculate_center_placement(self.fp1, self.newsize, kernel,
+                                                       thresh=int(self.thresh_entry_var.get()))
 
         self.center_points.delete_all()
         self.center_points.add_array(centers)
 
+        return
+
+    def change_transformation(self):
+        self.island_list.delete_all()
+        self.create_aligned_islands(change_transform=True)
         return
 
     def flip_button_click(self):
@@ -418,14 +426,22 @@ class MFM_GUI:
         self.center_points.add_array(centers)
         return
 
-    def create_aligned_islands(self):
+    def create_aligned_islands(self, change_transform=False):
         """
         Align the centers of the islands.
 
         :return: none
         """
-        self.islands = MFM_Morph.calculate_final_islands(self.guide_points.coords,
-                                                         self.ideal_fp, self.center_points.coords)
+        if change_transform:
+            if self.transform_id == 5:
+                set_i = 0
+            else:
+                set_i = self.transform_id + 1
+        else:
+            set_i = None
+        self.islands, self.transform_id = MFM_Morph.calculate_final_islands(self.guide_points.coords,
+                                                         self.ideal_fp, self.center_points.coords, self.n_side,
+                                                         set_i=set_i)
 
         self.island_list = IslandList(self.canvas, self.islands)
 
@@ -754,7 +770,7 @@ class MFM_GUI:
 
         for island, inner_box in zip(self.island_list.islands, self.island_list.inner_boxes):
             plt.fill(island.coords()[::2], island.coords()[1::2], fc=sigma_fill(island), ec=sigma_fill(island))
-            if island.sigma == 1:
+            if island.sigma == -1:
                 plt.arrow(
                     np.mean(inner_box.coords()[0:4:2]),
                     np.mean(inner_box.coords()[1:4:2]),

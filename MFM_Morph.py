@@ -5,6 +5,7 @@ import numpy as np
 
 from matplotlib import cm
 from matplotlib.path import Path
+from PIL import Image
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial import distance_matrix
 
@@ -84,12 +85,20 @@ def calculate_center_placement(img_fp, dim, kernel, thresh=None):
 
     index_array = np.array((areas <= area_max) & (furthest_dist <= furthest_dist_max) & (areas >= area_min))
 
+    # plt.imshow(Image.open(img_fp).convert('L').resize(dim), cmap='gray', vmin=0, vmax=225)
+    # for i in range(len(index_array)):
+    #     if index_array[i]:
+    #         plt.fill(contours[i][:,0], contours[i][:,1], color='none', edgecolor='xkcd:light green')
+    #     else:
+    #         plt.fill(contours[i][:, 0], contours[i][:,1], color='none', edgecolor='xkcd:light red')
+    # plt.show()
+
     centers = np.array(all_centers)[index_array]
 
     return centers
 
 
-def calculate_final_islands(guide_points, ideal_fp, centers):
+def calculate_final_islands(guide_points, ideal_fp, centers, n, set_i=None):
     """
     @param: guide_points, numpy array, should have shape (6, 2)
     @param: ideal_fp, str, path to center of island locations
@@ -113,12 +122,7 @@ def calculate_final_islands(guide_points, ideal_fp, centers):
         guides[2] = save
 
     # Distort ideal map using guide points
-    ideal_guide_ids = np.array([
-        0, 16,
-        50, 445,
-        443, 17,
-        280, 314, 312
-    ])
+    ideal_guide_ids = np.genfromtxt(r"./idealguideids/single{:0>2d}.txt".format(n), delimiter=',', dtype=int)
 
     ideal_data = np.genfromtxt(ideal_fp, delimiter=',')
     ideal_centers = ideal_data[:,:2]
@@ -197,20 +201,38 @@ def calculate_final_islands(guide_points, ideal_fp, centers):
 
     min_cost = float('inf')
     min_i = None
-    for ind, p in enumerate([p1, p2, p3, p4, p5, p6]):
-        cost_matrix = np.zeros((len(p), len(centers)))
-        for i in range(len(p)):
-            for j in range(len(centers)):
-                # cost is square of distance
-                cost_matrix[i, j] = np.sum((p[i] - centers[j]) ** 2)
 
-        # Use linear sum assignment to move the ideal centers to the closest mfm centers
-        ideal_inds, mfm_inds = linear_sum_assignment(cost_matrix)
-        cost = cost_matrix[ideal_inds, mfm_inds].sum()
+    if set_i is None:
+        for ind, p in enumerate([p1, p2, p3, p4, p5, p6]):
+            # plt.imshow(Image.open(img_fp).convert('L').resize(dim), cmap='gray', vmin=0, vmax=225)
+            # plt.plot(p[:,0], p[:,1], 'ro', markersize=0.3)
+            # plt.show()
 
-        if cost < min_cost:
-            min_cost = cost
-            min_i = ind
+            cost_matrix = np.zeros((len(p), len(centers)))
+            for i in range(len(p)):
+                for j in range(len(centers)):
+                    # cost is square of distance
+                    cost_matrix[i, j] = np.sum((p[i] - centers[j]) ** 2)
+
+            # Use linear sum assignment to move the ideal centers to the closest mfm centers
+            ideal_inds, mfm_inds = linear_sum_assignment(cost_matrix)
+
+            # plt.clf()
+            # plt.imshow(Image.open(img_fp).convert('L').resize(dim), cmap='gray', vmin=0, vmax=225)
+            # plt.plot(p[:, 0], p[:, 1], 'ro', markersize=0.1)
+            # plt.plot(centers[:, 0], centers[:, 1], 'bo', markersize=0.1)
+            # for i, j in zip(ideal_inds, mfm_inds):
+            #     plt.plot([p[i][0], centers[j][0]], [p[i][1], centers[j][1]], color='xkcd:yellow', lw=0.6)
+            # plt.show()
+            # plt.show()
+
+            cost = cost_matrix[ideal_inds, mfm_inds].sum()
+
+            if cost < min_cost:
+                min_cost = cost
+                min_i = ind
+    else:
+        min_i = set_i
 
     p = [p1, p2, p3, p4, p5, p6][min_i]
     t = [t1, t2, t3, t4, t5, t6][min_i]
@@ -228,7 +250,7 @@ def calculate_final_islands(guide_points, ideal_fp, centers):
         transformed = transform_points(t, reshaped_coords)
         island.enter_coords(np.squeeze(transformed.reshape((8, 1))), flipped=flipped)
 
-    return ideal_islands
+    return ideal_islands, min_i
 
 
 def rotate(p, origin=(0, 0), angle=0):
